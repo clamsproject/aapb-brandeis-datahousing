@@ -1,0 +1,7 @@
+DROP TABLE IF EXISTS map;
+CREATE TABLE IF NOT EXISTS map (
+	GUID	TEXT NOT NULL,
+	file_type	TEXT NOT NULL,
+	server_path	TEXT NOT NULL
+);
+
