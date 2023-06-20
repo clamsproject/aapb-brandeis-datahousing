@@ -1,0 +1,19 @@
+<form action="generate" method="post">
+    <p>Enter the GUID:</p>
+        <input type="text" name="GUID" pattern="cpb-aacip{_-}.*" placeholder="cpb-aacip..."><br>
+    <p>Select the desired file extension:</p>
+        <input type="radio" name="file_extension" value=".xml" id=".xml">
+            <label for=".xml">.xml</label><br>
+        <input type="radio" name="file_extension" value=".txt" id=".txt">
+            <label for=".txt">.txt</label><br>
+        <input type="radio" name="file_extension" value=".vtt" id=".vtt">
+            <label for=".vtt">.vtt</label><br>
+        <input type="radio" name="file_extension" value=".mp3" id=".mp3">
+            <label for=".mp3">.mp3</label><br>
+        <input type="radio" name="file_extension" value=".mov" id=".mov">
+            <label for=".mov">.mov</label><br>
+        <input type="radio" name="file_extension" value=".mp4" id=".mp4">
+            <label for=".mp4">.mp4</label><br>
+        <br>
+    <input type="submit" value="Generate">
+</form>
