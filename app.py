@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for
 import sqlite3
 import argparse
+from datetime import date
 from pathlib import Path
 
 DATABASE = 'database.db'
@@ -39,19 +40,23 @@ def database_search(connection, guid, types):
     """searches the database for files"""
     if len(types) == 1:
         paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID=? and file_type=? GROUP BY file_type, server_path;""", (guid, types[0])).fetchall()
+        connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID=? and file_type=?;""", (date.today(), guid, types[0]))
     elif len(types) == 2:
         paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID=? and file_type in (?, ?) GROUP BY file_type, server_path;""", (guid, types[0], types[1])).fetchall()
+        connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID=? and file_type in (?, ?);""", (date.today(), guid, types[0], types[1]))
     elif len(types) == 3:
         paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID=? and file_type in (?, ?, ?) GROUP BY file_type, server_path;""", (guid, types[0], types[1], types[2])).fetchall()
+        connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID=? and file_type in (?, ?, ?);""", (date.today(), guid, types[0], types[1], types[2]))
     else:
         paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID=? GROUP BY file_type, server_path;""", (guid,)).fetchall()
+        connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID=?;""", (date.today(), guid))
     connection.commit()
     return paths
 
 def insert_into_db(connection, guid, result):
     """inserts new entry into the database"""
     type = file_typer(result)
-    connection.execute("""INSERT INTO map VALUES (?, ?, ?);""", (guid, type, str(result)))
+    connection.execute("""INSERT INTO map VALUES (?, ?, ?, ?, ?);""", (guid, type, str(result), date.today(), date.today()))
     connection.commit()
 
 def aapb_generate(guid, extension):
