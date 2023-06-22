@@ -61,7 +61,7 @@ def insert_into_db(connection, guid, result):
 
 def aapb_generate(guid, extension):
     """generates a file from AAPB given a guid and file type"""
-    # NOTE: needs to be updated with AAPB API
+    # TODO: needs to be updated with AAPB API
     root = Path(SEARCH_DIRECTORY)
     dir = root.joinpath(RESULT_DIRECTORY)
     if not dir.is_dir():
@@ -97,6 +97,25 @@ def search():
         return render_template('search_results.html', GUID=guid, paths=paths)
     else:
         return render_template('search.html')
+    
+@app.route('/searchapi')
+def search_api():
+    file = [request.args['file']]
+    guid = request.args['guid']
+    connection = get_db_connection()
+    paths = database_search(connection, guid, file)
+    if len(paths) == 0:
+        results = directory_search(guid)
+        if len(results) == 0:
+            connection.close()
+            return 'The requested file does not exist in our server'
+        else:
+            for result in results:
+                insert_into_db(connection, guid, result)
+            paths = database_search(connection, guid, file)
+            connection.commit()
+    connection.close()
+    return paths[0]['server_path']
     
 @app.route('/generate', methods=['GET','POST'])
 def add():
