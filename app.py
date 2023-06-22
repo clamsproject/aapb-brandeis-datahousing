@@ -115,7 +115,10 @@ def search_api():
             paths = database_search(connection, guid, file)
             connection.commit()
     connection.close()
-    return paths[0]['server_path']
+    if len(paths) > 0:
+        return paths[0]['server_path']
+    else:
+        return 'The requested file does not exist in our server'
     
 @app.route('/generate', methods=['GET','POST'])
 def add():
