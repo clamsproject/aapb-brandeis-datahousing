@@ -1,0 +1,2 @@
+<code>python app.py \<search\> \<result\></code> will let you run the web server.<br>
+<code>\<search\></code> should be the name of the directory where you want to search for files, and <code>\<result\></code> should be the name of the subdirectory within <code>\<search\></code> where you want to store generated files. (If not specified, <code>\<result\></code> will default to a directory called <code>newfiles</code>.)
