@@ -8,11 +8,15 @@ DATABASE = 'database.db'
 
 app = Flask(__name__)
 
-def initialize():
+def initialize(start):
     """initializes the database"""
     connection = sqlite3.connect(DATABASE)
-    with open('schema.sql') as f:
-        connection.executescript(f.read())
+    if start:
+        with open('schema_scratch.sql') as f:
+            connection.executescript(f.read())
+    else:
+        with open('schema.sql') as f:
+            connection.executescript(f.read())
 
 def get_db_connection():
     """gets connection to the database in order to work with it"""
@@ -98,18 +102,18 @@ def search():
     else:
         return render_template('search.html')
     
-@app.route('/searchapi')
+@app.route('/searchapi', methods=['GET'])
 def search_api():
-    file = [request.args['file']]
+    if 'file' in request.args:
+        file = [request.args['file']]
+    else:
+        file = []
     guid = request.args['guid']
     connection = get_db_connection()
     paths = database_search(connection, guid, file)
     if len(paths) == 0:
         results = directory_search(guid)
-        if len(results) == 0:
-            connection.close()
-            return 'The requested file does not exist in our server'
-        else:
+        if len(results) > 0:
             for result in results:
                 insert_into_db(connection, guid, result)
             paths = database_search(connection, guid, file)
@@ -133,12 +137,17 @@ def add():
         return render_template('generate.html')
     
 if __name__ == '__main__':
-    initialize()
     parser = argparse.ArgumentParser()
-    parser.add_argument('search_directory', nargs='?', help="the root directory that contains the files to search in")
-    parser.add_argument('result_directory', nargs='?', help="the subdirectory you'd like to store new files in", default="newfiles")
+    parser.add_argument('-s', '--search_directory', nargs='?', help="the root directory that contains the files to search in")
+    parser.add_argument('-r', '--result_directory', nargs='?', help="the subdirectory you'd like to store new files in", default="newfiles")
+    parser.add_argument('--host', nargs='?', help="the host name", default="0.0.0.0")
+    parser.add_argument('-p', '--port', nargs='?', help="the port to run the app from", default="8001")
+    parser.add_argument('-n', '--new_database', help="create the database from scratch", action='store_true')
     args = parser.parse_args()
     SEARCH_DIRECTORY = args.search_directory
     RESULT_DIRECTORY = args.result_directory
-    app.run()
-    
+    HOST = args.host
+    PORT = args.port
+    START_NEW = args.new_database
+    initialize(START_NEW)
+    app.run(host=HOST, port=PORT)
