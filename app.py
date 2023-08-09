@@ -1,22 +1,57 @@
-from flask import Flask, render_template, request, redirect, url_for
-import sqlite3
 import argparse
+import sqlite3
 from datetime import date
 from pathlib import Path
+from string import Template
 
-DATABASE = 'database.db'
+from flask import Flask, render_template, request
+
+DATABASE = Path(__file__).parent / 'database.db'
 
 app = Flask(__name__)
+
+
+def shorten_guid(guid):
+    if guid.startswith('cpb'):
+        return '-'.join(guid[10:].split('.', 1)[0].split('-')[:2])
+    return guid
+
+def batched(files, n):
+    """batches files into tuples of length n"""
+    batches = []
+    start = 0
+    end = n
+    while end < len(files):
+        batches.append(", ".join(files[start:end]))
+        start = end
+        end += n
+    batches.append(", ".join(files[start:]))
+    return batches
 
 def initialize(start):
     """initializes the database"""
     connection = sqlite3.connect(DATABASE)
     if start:
-        with open('schema_scratch.sql') as f:
+        with open(Path(__file__).parent / 'schema_scratch.sql') as f:
             connection.executescript(f.read())
+        files = []
+        file_template = Template("""('${guid}', '${type}', '${path}', '${created}', '${accessed}')""")
+        for f in Path(SEARCH_DIRECTORY).glob("**/*"):
+            if f.name.startswith('cpb'):
+                file = file_template.substitute(guid=shorten_guid(f.stem), type=file_typer(f), path=str(f), created=date.today(), accessed=date.today())
+                files.append(file)
+        if len(files) < 1:
+            return
+        file_batches = batched(files, 1000)
+        sql_template = Template("""INSERT INTO map VALUES ${values};""")
+        for batch in file_batches:
+            sql = sql_template.substitute(values=batch)
+            connection.execute(sql)
+        connection.commit()
     else:
-        with open('schema.sql') as f:
+        with open(Path(__file__).parent / 'schema.sql') as f:
             connection.executescript(f.read())
+
 
 def get_db_connection():
     """gets connection to the database in order to work with it"""
@@ -24,13 +59,15 @@ def get_db_connection():
     connection.row_factory = sqlite3.Row
     return connection
 
+
 def directory_search(guid):
     """returns the locations of all files in the SEARCH_DIRECTORY that begin with the given guid"""
     paths = []
     for file in Path(SEARCH_DIRECTORY).glob("**/*"):
-        if file.stem.startswith(guid):
+        if guid in file.stem:
             paths.append(file)
     return paths
+
 
 def file_typer(path):
     """determines the file type based on its extension"""
@@ -39,9 +76,11 @@ def file_typer(path):
         return file_types[path.suffix]
     else:
         return 'other'
-    
+
+
 def database_search(connection, guid, types):
     """searches the database for files"""
+    guid = shorten_guid(guid)
     if len(types) == 1:
         paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID=? and file_type=? GROUP BY file_type, server_path;""", (guid, types[0])).fetchall()
         connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID=? and file_type=?;""", (date.today(), guid, types[0]))
@@ -57,11 +96,14 @@ def database_search(connection, guid, types):
     connection.commit()
     return paths
 
+
 def insert_into_db(connection, guid, result):
     """inserts new entry into the database"""
+    guid = shorten_guid(guid)
     type = file_typer(result)
     connection.execute("""INSERT INTO map VALUES (?, ?, ?, ?, ?);""", (guid, type, str(result), date.today(), date.today()))
     connection.commit()
+
 
 def aapb_generate(guid, extension):
     """generates a file from AAPB given a guid and file type"""
@@ -73,14 +115,14 @@ def aapb_generate(guid, extension):
     filename = dir.joinpath(guid + extension)
     filename.touch()
     return filename
-    
-    
+
 
 @app.route('/')
 def main():
     return render_template('home.html')
 
-@app.route('/search', methods=['GET','POST'])
+
+@app.route('/search', methods=['GET', 'POST'])
 def search():
     if request.method == 'POST':
         files = request.form.getlist('file_type')
@@ -101,7 +143,8 @@ def search():
         return render_template('search_results.html', GUID=guid, paths=paths)
     else:
         return render_template('search.html')
-    
+
+
 @app.route('/searchapi', methods=['GET'])
 def search_api():
     if 'file' in request.args:
@@ -123,8 +166,9 @@ def search_api():
         return paths[0]['server_path']
     else:
         return 'The requested file does not exist in our server'
-    
-@app.route('/generate', methods=['GET','POST'])
+
+
+@app.route('/generate', methods=['GET', 'POST'])
 def add():
     if request.method == 'POST':
         extension = request.form['file_extension']
@@ -135,11 +179,14 @@ def add():
         return render_template('generate_results.html', GUID=guid, path=file)
     else:
         return render_template('generate.html')
-    
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--search_directory', nargs='?', help="the root directory that contains the files to search in")
-    parser.add_argument('-r', '--result_directory', nargs='?', help="the subdirectory you'd like to store new files in", default="newfiles")
+    parser.add_argument('-s', '--search_directory', nargs='?',
+                        help="the root directory that contains the files to search in")
+    parser.add_argument('-r', '--result_directory', nargs='?', help="the subdirectory you'd like to store new files in",
+                        default="newfiles")
     parser.add_argument('--host', nargs='?', help="the host name", default="0.0.0.0")
     parser.add_argument('-p', '--port', nargs='?', help="the port to run the app from", default="8001")
     parser.add_argument('-n', '--new_database', help="create the database from scratch", action='store_true')
