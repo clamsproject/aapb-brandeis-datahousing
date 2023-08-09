@@ -1,12 +1,12 @@
 import argparse
 import sqlite3
-from collections import defaultdict
 from datetime import date
 from pathlib import Path
+from string import Template
 
 from flask import Flask, render_template, request
 
-DATABASE = 'database.db'
+DATABASE = Path(__file__).parent / 'database.db'
 
 app = Flask(__name__)
 
@@ -16,23 +16,41 @@ def shorten_guid(guid):
         return '-'.join(guid[10:].split('.', 1)[0].split('-')[:2])
     return guid
 
+def batched(files, n):
+    """batches files into tuples of length n"""
+    batches = []
+    start = 0
+    end = n
+    while end < len(files):
+        batches.append(", ".join(files[start:end]))
+        start = end
+        end += n
+    batches.append(", ".join(files[start:]))
+    return batches
 
 def initialize(start):
     """initializes the database"""
     connection = sqlite3.connect(DATABASE)
     if start:
-        with open('schema_scratch.sql') as f:
+        with open(Path(__file__).parent / 'schema_scratch.sql') as f:
             connection.executescript(f.read())
-    else:
-        with open('schema.sql') as f:
-            connection.executescript(f.read())
-    if start:
-        d = defaultdict(lambda: defaultdict(list))
+        files = []
+        file_template = Template("""('${guid}', '${type}', '${path}', '${created}', '${accessed}')""")
         for f in Path(SEARCH_DIRECTORY).glob("**/*"):
             if f.name.startswith('cpb'):
-                d[shorten_guid(f.stem)][file_typer(f)].append(f)
-        # TODO (krim @ 8/8/23): bulk insert all findings (d) into the database 
-        # connection.execute`many`("""INSERT INTO map VALUES (?, ?, ?, ?, ?);""", (guid, type, str(result), date.today(), date.today()))
+                file = file_template.substitute(guid=shorten_guid(f.stem), type=file_typer(f), path=str(f), created=date.today(), accessed=date.today())
+                files.append(file)
+        if len(files) < 1:
+            return
+        file_batches = batched(files, 1000)
+        sql_template = Template("""INSERT INTO map VALUES ${values};""")
+        for batch in file_batches:
+            sql = sql_template.substitute(values=batch)
+            connection.execute(sql)
+        connection.commit()
+    else:
+        with open(Path(__file__).parent / 'schema.sql') as f:
+            connection.executescript(f.read())
 
 
 def get_db_connection():
