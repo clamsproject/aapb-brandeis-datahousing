@@ -163,7 +163,7 @@ def search_api():
             connection.commit()
     connection.close()
     if len(paths) > 0:
-        return paths[0]['server_path']
+        return [path['server_path'] for path in paths]
     else:
         return 'The requested file does not exist in our server'
 
