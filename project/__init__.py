@@ -4,11 +4,11 @@ from datetime import date
 from pathlib import Path
 from string import Template
 
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, Blueprint
 
 DATABASE = Path(__file__).parent / 'database.db'
 
-app = Flask(__name__)
+bp = Blueprint('app', __name__, template_folder='templates')
 
 
 def shorten_guid(guid):
@@ -117,12 +117,12 @@ def aapb_generate(guid, extension):
     return filename
 
 
-@app.route('/')
+@bp.route('/')
 def main():
     return render_template('home.html')
 
 
-@app.route('/search', methods=['GET', 'POST'])
+@bp.route('/search', methods=['GET', 'POST'])
 def search():
     if request.method == 'POST':
         files = request.form.getlist('file_type')
@@ -145,7 +145,7 @@ def search():
         return render_template('search.html')
 
 
-@app.route('/searchapi', methods=['GET'])
+@bp.route('/searchapi', methods=['GET'])
 def search_api():
     if 'file' in request.args:
         file = [request.args['file']]
@@ -168,7 +168,7 @@ def search_api():
         return 'The requested file does not exist in our server'
 
 
-@app.route('/generate', methods=['GET', 'POST'])
+@bp.route('/generate', methods=['GET', 'POST'])
 def add():
     if request.method == 'POST':
         extension = request.form['file_extension']
@@ -180,6 +180,14 @@ def add():
     else:
         return render_template('generate.html')
 
+
+def create_app(init_db):
+    app = Flask(__name__)
+    app.config.from_prefixed_env()
+    initialize(init_db)
+    app.register_blueprint(bp)
+    return app
+        
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -196,5 +204,5 @@ if __name__ == '__main__':
     HOST = args.host
     PORT = args.port
     START_NEW = args.new_database
-    initialize(START_NEW)
+    app = create_app(START_NEW)
     app.run(host=HOST, port=PORT)
