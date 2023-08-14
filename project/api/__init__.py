@@ -1,4 +1,4 @@
-import argparse
+import os
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -7,6 +7,9 @@ from string import Template
 from flask import Flask, render_template, request, Blueprint
 
 DATABASE = Path(__file__).parent / 'database.db'
+SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')
+RESULT_DIRECTORY = os.environ.get('DOWNLOAD_DIR')
+BUILD_DB = os.environ.get('BUILD_DB')
 
 bp = Blueprint('app', __name__, template_folder='templates')
 
@@ -181,28 +184,9 @@ def add():
         return render_template('generate.html')
 
 
-def create_app(init_db):
+def create_app():
     app = Flask(__name__)
     app.config.from_prefixed_env()
-    initialize(init_db)
+    initialize(BUILD_DB)
     app.register_blueprint(bp)
     return app
-        
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--search_directory', nargs='?',
-                        help="the root directory that contains the files to search in")
-    parser.add_argument('-r', '--result_directory', nargs='?', help="the subdirectory you'd like to store new files in",
-                        default="newfiles")
-    parser.add_argument('--host', nargs='?', help="the host name", default="0.0.0.0")
-    parser.add_argument('-p', '--port', nargs='?', help="the port to run the app from", default="8001")
-    parser.add_argument('-n', '--new_database', help="create the database from scratch", action='store_true')
-    args = parser.parse_args()
-    SEARCH_DIRECTORY = args.search_directory
-    RESULT_DIRECTORY = args.result_directory
-    HOST = args.host
-    PORT = args.port
-    START_NEW = args.new_database
-    app = create_app(START_NEW)
-    app.run(host=HOST, port=PORT)
