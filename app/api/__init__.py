@@ -9,7 +9,7 @@ from flask import Flask, render_template, request, Blueprint
 DATABASE = Path(__file__).parent / 'database.db'
 SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')
 RESULT_DIRECTORY = os.environ.get('DOWNLOAD_DIR')
-BUILD_DB = os.environ.get('BUILD_DB')
+BUILD_DB = bool(os.environ.get('BUILD_DB'))
 
 bp = Blueprint('app', __name__, template_folder='templates')
 
@@ -184,9 +184,11 @@ def add():
         return render_template('generate.html')
 
 
-def create_app():
+def create_app(build_db=BUILD_DB):
+    initialize(build_db)
+
     app = Flask(__name__)
     app.config.from_prefixed_env()
-    initialize(BUILD_DB)
     app.register_blueprint(bp)
+
     return app
