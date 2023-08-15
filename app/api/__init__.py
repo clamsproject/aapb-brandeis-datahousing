@@ -19,17 +19,11 @@ def shorten_guid(guid):
         return '-'.join(guid[10:].split('.', 1)[0].split('-')[:2])
     return guid
 
-def batched(files, n):
-    """batches files into tuples of length n"""
-    batches = []
-    start = 0
-    end = n
-    while end < len(files):
-        batches.append(", ".join(files[start:end]))
-        start = end
-        end += n
-    batches.append(", ".join(files[start:]))
-    return batches
+def batch_insert(connection, batch):
+    """inserts a batch of files into the database"""
+    q = f"INSERT INTO map VALUES {batch};"
+    connection.execute(q)
+    connection.commit()
 
 def initialize(start):
     """initializes the database"""
@@ -39,18 +33,17 @@ def initialize(start):
             connection.executescript(f.read())
         files = []
         file_template = Template("""('${guid}', '${type}', '${path}', '${created}', '${accessed}')""")
+        c = 0
         for f in Path(SEARCH_DIRECTORY).glob("**/*"):
-            if f.name.startswith('cpb'):
+            if f.name.startswith('cpb') and '/.' not in str(f):
                 file = file_template.substitute(guid=shorten_guid(f.stem), type=file_typer(f), path=str(f), created=date.today(), accessed=date.today())
                 files.append(file)
-        if len(files) < 1:
-            return
-        file_batches = batched(files, 1000)
-        sql_template = Template("""INSERT INTO map VALUES ${values};""")
-        for batch in file_batches:
-            sql = sql_template.substitute(values=batch)
-            connection.execute(sql)
-        connection.commit()
+                if c % 1000 == 0:
+                    batch_insert(connection, ", ".join(files))
+                    files= []
+                    print(c, f)
+                c += 1
+        batch_insert(connection, ", ".join(files))
     else:
         with open(Path(__file__).parent / 'schema.sql') as f:
             connection.executescript(f.read())
