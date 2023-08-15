@@ -43,7 +43,8 @@ def initialize(start):
                     files= []
                     print(c, f)
                 c += 1
-        batch_insert(connection, ", ".join(files))
+        if len(files) > 0:
+            batch_insert(connection, ", ".join(files))
     else:
         with open(Path(__file__).parent / 'schema.sql') as f:
             connection.executescript(f.read())
