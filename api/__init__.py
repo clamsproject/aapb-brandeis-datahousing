@@ -34,7 +34,12 @@ def initialize(start):
         files = []
         file_template = Template("""('${guid}', '${type}', '${path}', '${created}', '${accessed}')""")
         c = 0
-        for f in Path(SEARCH_DIRECTORY).glob("**/*"):
+        sdir = Path(SEARCH_DIRECTORY)
+        # make sure the directory exists
+        sdir.iterdir()
+        import time
+        time.sleep(1)
+        for f in sdir.glob("**/*"):
             if f.name.startswith('cpb') and '/.' not in str(f):
                 file = file_template.substitute(guid=shorten_guid(f.stem), type=file_typer(f), path=str(f), created=date.today(), accessed=date.today())
                 files.append(file)

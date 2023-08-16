@@ -6,7 +6,7 @@ After=local-fs.target
 [Container]
 Image=localhost/baapb-datahousing:latest
 PublishPort=23456:8080
-Volume=/mnt:/mnt
+Volume=/mnt/llc/llc_data/clams:/mnt/llc/llc_data/clams
 Exec=gunicorn --bind 0.0.0.0:8080 wsgi:app
 
 [Install]
