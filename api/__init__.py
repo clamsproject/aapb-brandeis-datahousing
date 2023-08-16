@@ -1,14 +1,17 @@
-import argparse
+import os
 import sqlite3
 from datetime import date
 from pathlib import Path
 from string import Template
 
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, Blueprint
 
 DATABASE = Path(__file__).parent / 'database.db'
+SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')
+RESULT_DIRECTORY = os.environ.get('DOWNLOAD_DIR')
+BUILD_DB = bool(os.environ.get('BUILD_DB'))
 
-app = Flask(__name__)
+bp = Blueprint('app', __name__, template_folder='templates')
 
 
 def shorten_guid(guid):
@@ -16,17 +19,11 @@ def shorten_guid(guid):
         return '-'.join(guid[10:].split('.', 1)[0].split('-')[:2])
     return guid
 
-def batched(files, n):
-    """batches files into tuples of length n"""
-    batches = []
-    start = 0
-    end = n
-    while end < len(files):
-        batches.append(", ".join(files[start:end]))
-        start = end
-        end += n
-    batches.append(", ".join(files[start:]))
-    return batches
+def batch_insert(connection, batch):
+    """inserts a batch of files into the database"""
+    q = f"INSERT INTO map VALUES {batch};"
+    connection.execute(q)
+    connection.commit()
 
 def initialize(start):
     """initializes the database"""
@@ -36,18 +33,23 @@ def initialize(start):
             connection.executescript(f.read())
         files = []
         file_template = Template("""('${guid}', '${type}', '${path}', '${created}', '${accessed}')""")
-        for f in Path(SEARCH_DIRECTORY).glob("**/*"):
-            if f.name.startswith('cpb'):
+        c = 0
+        sdir = Path(SEARCH_DIRECTORY)
+        # make sure the directory exists
+        sdir.iterdir()
+        import time
+        time.sleep(1)
+        for f in sdir.glob("**/*"):
+            if f.name.startswith('cpb') and '/.' not in str(f):
                 file = file_template.substitute(guid=shorten_guid(f.stem), type=file_typer(f), path=str(f), created=date.today(), accessed=date.today())
                 files.append(file)
-        if len(files) < 1:
-            return
-        file_batches = batched(files, 1000)
-        sql_template = Template("""INSERT INTO map VALUES ${values};""")
-        for batch in file_batches:
-            sql = sql_template.substitute(values=batch)
-            connection.execute(sql)
-        connection.commit()
+                if c % 1000 == 0:
+                    batch_insert(connection, ", ".join(files))
+                    files= []
+                    print(c, f)
+                c += 1
+        if len(files) > 0:
+            batch_insert(connection, ", ".join(files))
     else:
         with open(Path(__file__).parent / 'schema.sql') as f:
             connection.executescript(f.read())
@@ -117,12 +119,12 @@ def aapb_generate(guid, extension):
     return filename
 
 
-@app.route('/')
+@bp.route('/')
 def main():
     return render_template('home.html')
 
 
-@app.route('/search', methods=['GET', 'POST'])
+@bp.route('/search', methods=['GET', 'POST'])
 def search():
     if request.method == 'POST':
         files = request.form.getlist('file_type')
@@ -145,7 +147,7 @@ def search():
         return render_template('search.html')
 
 
-@app.route('/searchapi', methods=['GET'])
+@bp.route('/searchapi', methods=['GET'])
 def search_api():
     if 'file' in request.args:
         file = [request.args['file']]
@@ -163,12 +165,12 @@ def search_api():
             connection.commit()
     connection.close()
     if len(paths) > 0:
-        return paths[0]['server_path']
+        return [path['server_path'] for path in paths]
     else:
         return 'The requested file does not exist in our server'
 
 
-@app.route('/generate', methods=['GET', 'POST'])
+@bp.route('/generate', methods=['GET', 'POST'])
 def add():
     if request.method == 'POST':
         extension = request.form['file_extension']
@@ -181,20 +183,11 @@ def add():
         return render_template('generate.html')
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--search_directory', nargs='?',
-                        help="the root directory that contains the files to search in")
-    parser.add_argument('-r', '--result_directory', nargs='?', help="the subdirectory you'd like to store new files in",
-                        default="newfiles")
-    parser.add_argument('--host', nargs='?', help="the host name", default="0.0.0.0")
-    parser.add_argument('-p', '--port', nargs='?', help="the port to run the app from", default="8001")
-    parser.add_argument('-n', '--new_database', help="create the database from scratch", action='store_true')
-    args = parser.parse_args()
-    SEARCH_DIRECTORY = args.search_directory
-    RESULT_DIRECTORY = args.result_directory
-    HOST = args.host
-    PORT = args.port
-    START_NEW = args.new_database
-    initialize(START_NEW)
-    app.run(host=HOST, port=PORT)
+def create_app(build_db=BUILD_DB):
+    initialize(build_db)
+
+    app = Flask(__name__)
+    app.config.from_prefixed_env()
+    app.register_blueprint(bp)
+
+    return app
