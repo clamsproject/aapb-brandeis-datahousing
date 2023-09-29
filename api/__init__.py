@@ -154,6 +154,7 @@ def search_api():
     else:
         file = []
     guid = request.args['guid']
+    only_first = request.args.get('onlyfirst', False)
     connection = get_db_connection()
     paths = database_search(connection, guid, file)
     if len(paths) == 0:
@@ -165,7 +166,10 @@ def search_api():
             connection.commit()
     connection.close()
     if len(paths) > 0:
-        return [path['server_path'] for path in paths]
+        if only_first:
+            return paths[0]['server_path']
+        else:
+            return [path['server_path'] for path in paths]
     else:
         return 'The requested file does not exist in our server'
 
