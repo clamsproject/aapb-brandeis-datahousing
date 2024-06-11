@@ -7,7 +7,7 @@ After=local-fs.target
 Image=localhost/baapb-datahousing:latest
 PublishPort=23456:8080
 Volume=/mnt/llc/llc_data/clams:/mnt/llc/llc_data/clams
-Exec=gunicorn --bind 0.0.0.0:8080 wsgi:app
+Exec=gunicorn --bind 0.0.0.0:8080 --timeout 1200 wsgi:app
 
 [Install]
 WantedBy=multi-user.target default.target
