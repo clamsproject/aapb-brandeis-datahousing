@@ -19,6 +19,16 @@ def shorten_guid(guid):
         return '-'.join(guid[10:].split('.', 1)[0].split('-')[:2])
     return guid
 
+def check_symlink(fpath):
+    """checks if a file is a symlink"""
+    if not fpath.exists() or not fpath.is_file():
+        return False
+    if fpath.is_symlink():
+        return True
+    if any(p.is_symlink() for p in fpath.parents):
+        return True
+    return False
+
 def batch_insert(connection, batch):
     """inserts a batch of files into the database"""
     q = f"INSERT INTO map VALUES {batch};"
@@ -40,6 +50,8 @@ def initialize(start):
         import time
         time.sleep(1)
         for f in sdir.glob("**/*"):
+            if check_symlink(f):
+                continue
             if f.name.startswith('cpb') and '/.' not in str(f):
                 file = file_template.substitute(guid=shorten_guid(f.stem), type=file_typer(f), path=str(f), created=date.today(), accessed=date.today())
                 files.append(file)
@@ -66,6 +78,8 @@ def directory_search(guid):
     """returns the locations of all files in the SEARCH_DIRECTORY that begin with the given guid"""
     paths = []
     for file in Path(SEARCH_DIRECTORY).glob("**/*"):
+        if check_symlink(file):
+            continue
         if guid in file.stem:
             paths.append(file)
     return paths
