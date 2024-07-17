@@ -14,6 +14,7 @@ app = Flask(__name__)
 # read mmif inside post request, get view metadata
 # store in nested directory relating to view metadata
 
+
 @app.route("/")
 def root():
     return {"message": "Storage api for pipelined mmif files"}
@@ -64,9 +65,7 @@ def upload_mmif():
         if view_path in directory:
             continue
         # create path by joining directory with the current view path
-        print(directory)
         directory = os.path.join(directory, view_path)
-        print(directory)
         # now that we know it's not a duplicate view and we have the proper path location, we
         # store it and the associated param dict inside param_path_dict.
         param_path_dict[directory] = param_dict
@@ -74,9 +73,9 @@ def upload_mmif():
     # and dump the param dicts
     os.makedirs(directory, exist_ok=True)
     for path in param_path_dict:
-        print(path)
         file_path = os.path.join(path, '.json')
-        json.dump(param_path_dict[path], file_path)
+        with open(file_path, "w") as f:
+            json.dump(param_path_dict[path], f)
     # put mmif into the lowest level directory with filename based on guid
     file_path = os.path.join(directory, document)
     with open(file_path, "w") as f:
