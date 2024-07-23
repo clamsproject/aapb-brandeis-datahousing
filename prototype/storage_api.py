@@ -1,5 +1,5 @@
 from mmif import Mmif
-from flask import Flask, request
+from flask import Flask, request, jsonify, send_from_directory
 from enum import Enum
 from pydantic import BaseModel
 from typing import List, Dict
@@ -13,6 +13,9 @@ app = Flask(__name__)
 # get post request from user
 # read mmif inside post request, get view metadata
 # store in nested directory relating to view metadata
+
+# TODO: this app accepts "unresolvable" as an app version number; it needs to be fixed because
+# TODO: "unresolvable" is not specific and can represent multiple versions.
 
 
 @app.route("/")
@@ -38,9 +41,7 @@ def upload_mmif():
     # its param dict. After this loop, I create the dirs and then iterate through this dictionary to
     # place the param dicts in their proper spots.
     param_path_dict = {}
-    print(directory)
     for view in mmif.views:
-        print(directory)
         # this should return the back half of the app url, so just app name and version number
         subdir_list = view.metadata.app.split('/')[3:]
         # create path string for this view
@@ -59,7 +60,6 @@ def upload_mmif():
         # NOTE: this is *not* for security purposes, so the usage of md5 is not an issue.
         param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
         view_path = os.path.join(view_path, param_hash)
-        print(view_path)
         # check if this is a duplicate view. if it is, skip the current view.
         # NOTE: duplicate views are those with the same app, version number, AND parameter dict.
         if view_path in directory:
@@ -83,8 +83,60 @@ def upload_mmif():
     return "Success", 201
 
 
+@app.route("/retrieve/", methods=["POST"])
+def download_mmif():
+    # if not request.is_json:
+    #     return {'error': 'Request must be JSON'}, 400
+    data = json.loads(request.data.decode('utf-8'))
+    # get both pipeline and guid from data
+    # obtain pipeline using helper method
+    pipeline = pipeline_from_param_json(data)
+    guid = data.get('guid')
+    # validate existence of both args
+    if not pipeline or not guid:
+        return jsonify({'error': 'Missing required parameters: need both pipeline & guid'})
+    # concat pipeline with local storage
+    with open('config.yml', 'r') as file:
+        config = yaml.safe_load(file)
+    storage = config['storage_dir']
+    pipeline = os.path.join(storage, pipeline)
+    guid = guid + ".mmif"
+    # get file from storage directory
+    path = os.path.join(pipeline, guid)
+    with open(path, 'r') as file:
+        mmif = file.read()
+    return mmif
+
+
+# helper method for extracting pipeline
+def pipeline_from_param_json(param_json):
+    """
+    This method reads in a json containing the names of the pipelined apps and their
+    respective parameters, and then builds a path out of the pipelined apps and hashed
+    parameters.
+    """
+    pipeline = ""
+    for clams_app in param_json["pipeline"]:
+        # not using os path join until later for testing purposes
+        pipeline = pipeline + "/" + clams_app
+        # try to get param items
+        try:
+            param_list = ['='.join(pair) for pair in param_json["pipeline"][clams_app].items()]
+            param_list.sort()
+            param_string = ','.join(param_list)
+        # throws attribute error if empty (because empty means it's a set and not dict)
+        except AttributeError:
+            param_string = ""
+        # hash parameters
+        param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
+        pipeline = pipeline + "/" + param_hash
+    # removing first "/" so it doesn't mess with os.path.join later
+    pipeline = pipeline[1:]
+    return pipeline
+
+
 if __name__ == "__main__":
-    app.run()
+    app.run(port=8912)
 
 
 
