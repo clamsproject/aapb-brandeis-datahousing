@@ -1,4 +1,5 @@
 from mmif import Mmif
+from clams import mmif_utils
 from flask import Flask, request, jsonify, send_from_directory
 from enum import Enum
 from pydantic import BaseModel
@@ -8,6 +9,7 @@ import os
 import yaml
 import hashlib
 import json
+
 
 app = Flask(__name__)
 # get post request from user
@@ -73,7 +75,7 @@ def upload_mmif():
     # and dump the param dicts
     os.makedirs(directory, exist_ok=True)
     for path in param_path_dict:
-        file_path = os.path.join(path, '.json')
+        file_path = os.path.join(path, 'parameters.json')
         with open(file_path, "w") as f:
             json.dump(param_path_dict[path], f)
     # put mmif into the lowest level directory with filename based on guid
@@ -91,6 +93,8 @@ def download_mmif():
     # get both pipeline and guid from data
     # obtain pipeline using helper method
     pipeline = pipeline_from_param_json(data)
+    # get number of views for rewind if necessary
+    num_views = len(data['pipeline'])
     guid = data.get('guid')
     # validate existence of both args
     if not pipeline or not guid:
@@ -103,9 +107,16 @@ def download_mmif():
     guid = guid + ".mmif"
     # get file from storage directory
     path = os.path.join(pipeline, guid)
-    with open(path, 'r') as file:
-        mmif = file.read()
-    return mmif
+    # if file exists, we can return it
+    try:
+        with open(path, 'r') as file:
+            mmif = file.read()
+        return mmif
+    # otherwise we will use the rewinder
+    # this assumes the user has provided a subset of a mmif pipeline that we have previously stored
+    # in the case where this is not true, we return a FileNotFound error.
+    except FileNotFoundError:
+        return rewind_time(pipeline, guid, num_views)
 
 
 # helper method for extracting pipeline
@@ -133,6 +144,27 @@ def pipeline_from_param_json(param_json):
     # removing first "/" so it doesn't mess with os.path.join later
     pipeline = pipeline[1:]
     return pipeline
+
+
+def rewind_time(pipeline, guid, num_views):
+    """
+    This method takes in a pipeline (path), a guid, and a number of views, and uses os.walk to iterate through
+    directories that begin with that pipeline. It takes the first mmif file that matches the guid and uses the
+    rewind feature to include only the views indicated by the pipeline.
+    """
+    for home, dirs, files in os.walk(pipeline):
+        # find mmif with matching guid to rewind
+        for file in files:
+            if guid == file:
+                # rewind the mmif
+                with open(os.path.join(home, file), 'r') as f:
+                    mmif = Mmif(f.read())
+                    # we need to calculate the number of views to rewind
+                    rewound = mmif_utils.rewind.rewind_mmif(mmif, len(mmif.views) - num_views)
+                return rewound.serialize()
+    raise FileNotFoundError
+
+
 
 
 if __name__ == "__main__":
