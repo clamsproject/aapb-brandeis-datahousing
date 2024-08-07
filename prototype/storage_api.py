@@ -104,19 +104,48 @@ def download_mmif():
         config = yaml.safe_load(file)
     storage = config['storage_dir']
     pipeline = os.path.join(storage, pipeline)
-    guid = guid + ".mmif"
-    # get file from storage directory
-    path = os.path.join(pipeline, guid)
-    # if file exists, we can return it
-    try:
-        with open(path, 'r') as file:
-            mmif = file.read()
-        return mmif
-    # otherwise we will use the rewinder
-    # this assumes the user has provided a subset of a mmif pipeline that we have previously stored
-    # in the case where this is not true, we return a FileNotFound error.
-    except FileNotFoundError:
-        return rewind_time(pipeline, guid, num_views)
+    # CHECK IF GUID IS SINGLE VALUE OR LIST
+    if not isinstance(guid, list):
+        guid = guid + ".mmif"
+        # get file from storage directory
+        path = os.path.join(pipeline, guid)
+        # if file exists, we can return it
+        try:
+            with open(path, 'r') as file:
+                mmif = file.read()
+            return mmif
+        # otherwise we will use the rewinder
+        # this assumes the user has provided a subset of a mmif pipeline that we have previously stored
+        # in the case where this is not true, we return a FileNotFound error.
+        except FileNotFoundError:
+            return rewind_time(pipeline, guid, num_views)
+    else:
+        # in the case where we want multiple mmifs retrieved, we construct a json to store
+        # each guid as a key and each mmif as the value.
+        mmifs_by_guid = dict()
+        for curr_guid in guid:
+            curr_guid = curr_guid + ".mmif"
+            # get file from storage directory
+            path = os.path.join(pipeline, curr_guid)
+            # if file exists, we can put it in the json
+            try:
+                with open(path, 'r') as file:
+                    mmif = file.read()
+                # place serialized mmif into dictionary/json with guid key (remove file ext)
+                mmifs_by_guid[curr_guid.split('.')[0]] = mmif
+            # otherwise we will use the rewinder
+            # as with the single-guid case, this assumes the pipeline is a proper subset of
+            # another guid-matching mmif's pipeline.
+            # otherwise we store a string representing the lack of a file for that guid.
+            except FileNotFoundError:
+                try:
+                    mmif = rewind_time(pipeline, curr_guid, num_views)
+                    mmifs_by_guid[curr_guid.split('.')[0]] = mmif
+                except FileNotFoundError:
+                    # TODO: figure out a good way to mark file not found
+                    mmifs_by_guid[curr_guid.split('.')[0]] = "File not found"
+        # now turn the dictionary into a json and return it
+        return json.dumps(mmifs_by_guid)
 
 
 # helper method for extracting pipeline
