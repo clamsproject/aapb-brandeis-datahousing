@@ -1,0 +1,13 @@
+{
+  "pipeline": {
+    "distil-whisper-wrapper/v1.1": {
+      "pretty": "True"
+    },
+
+    "spacy-wrapper/v2.0": {
+      "pretty": "True"
+    }
+
+  },
+  "guid":["cpb-aacip-507-154dn40c26", "cpb-aacip-507-1v5bc3tf81"]
+}
