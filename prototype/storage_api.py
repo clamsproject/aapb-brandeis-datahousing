@@ -9,6 +9,7 @@ import os
 import yaml
 import hashlib
 import json
+from dotenv import load_dotenv
 
 
 app = Flask(__name__)
@@ -25,16 +26,14 @@ def root():
     return {"message": "Storage api for pipelined mmif files"}
 
 
-@app.route("/upload_mmif/", methods=["POST"])
+@app.route("/storeapi/mmif/", methods=["POST"])
 def upload_mmif():
     body = request.get_data(as_text=True)
-    # read local storage directory from config.yml
-    with open('config.yml', 'r') as file:
-        config = yaml.safe_load(file)
-    directory = config['storage_dir']
+    # read local storage directory from .env
+    load_dotenv()
+    directory = os.getenv('storage_dir')
     mmif = Mmif(body)
     # get guid from location
-    # document = body.[0]['properties']['location'].split('/')[2].split('.')[0]
     document = mmif.documents['d1']['properties'].location.split('/')[2].split('.')[0]
     # append '.mmif' to guid
     document = document + '.mmif'
@@ -75,7 +74,7 @@ def upload_mmif():
     # and dump the param dicts
     os.makedirs(directory, exist_ok=True)
     for path in param_path_dict:
-        file_path = os.path.join(path, 'parameters.json')
+        file_path = os.path.join(os.path.dirname(path), 'parameters.json')
         with open(file_path, "w") as f:
             json.dump(param_path_dict[path], f)
     # put mmif into the lowest level directory with filename based on guid
@@ -85,10 +84,8 @@ def upload_mmif():
     return "Success", 201
 
 
-@app.route("/retrieve/", methods=["POST"])
+@app.route("/searchapi/mmif/", methods=["POST"])
 def download_mmif():
-    # if not request.is_json:
-    #     return {'error': 'Request must be JSON'}, 400
     data = json.loads(request.data.decode('utf-8'))
     # get both pipeline and guid from data
     # obtain pipeline using helper method
@@ -96,14 +93,17 @@ def download_mmif():
     # get number of views for rewind if necessary
     num_views = len(data['pipeline'])
     guid = data.get('guid')
-    # validate existence of both args
-    if not pipeline or not guid:
-        return jsonify({'error': 'Missing required parameters: need both pipeline & guid'})
-    # concat pipeline with local storage
-    with open('config.yml', 'r') as file:
-        config = yaml.safe_load(file)
-    storage = config['storage_dir']
-    pipeline = os.path.join(storage, pipeline)
+    # validate existence of pipeline, guid is not necessary if you just want the pipeline returned
+    if not pipeline:
+        return jsonify({'error': 'Missing required parameters: need at least a pipeline'})
+    # load environment variables to concat pipeline with local storage path
+    load_dotenv()
+    directory = os.getenv('storage_dir')
+    pipeline = os.path.join(directory, pipeline)
+    # if this is a "zero-guid" request, the user will receive just the local storage pipeline
+    # this allows clients to utilize the api without downloading files (for working with local files)
+    if not guid:
+        return jsonify({'pipeline': pipeline})
     # CHECK IF GUID IS SINGLE VALUE OR LIST
     if not isinstance(guid, list):
         guid = guid + ".mmif"
