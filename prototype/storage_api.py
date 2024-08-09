@@ -17,8 +17,6 @@ app = Flask(__name__)
 # read mmif inside post request, get view metadata
 # store in nested directory relating to view metadata
 
-# TODO: this app accepts "unresolvable" as an app version number; it needs to be fixed because
-# TODO: "unresolvable" is not specific and can represent multiple versions.
 
 
 @app.route("/")
@@ -47,6 +45,14 @@ def upload_mmif():
         subdir_list = view.metadata.app.split('/')[3:]
         # create path string for this view
         view_path = os.path.join('', *subdir_list)
+        print(subdir_list)
+        print(view_path)
+        # IMPORTANT: We must check for both nonexistent and unresolvable version numbers.
+        # In both of these cases we do not want to store the mmif, as it would cause conflicts.
+        # TODO: Check back on this because I might be making assumptions about this data that aren't always
+        # TODO: true, e.g about list length. Far as I can tell though it aligns with typical mmif metadata.
+        if len(subdir_list) < 2 or subdir_list[1] == "unresolvable":
+            return jsonify({'error': f'app {subdir_list[0]} version is underspecified'}), 400
         # now we want to convert the parameter dictionary to a string and then hash it.
         # this hash will be the name of another subdirectory.
         try:
