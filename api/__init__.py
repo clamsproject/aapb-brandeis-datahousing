@@ -3,13 +3,19 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 from string import Template
+from api.storage_api import blueprint as storage_bp
+from mmif import Mmif
+from clams import mmif_utils
+import hashlib
+import json
 
-from flask import Flask, render_template, request, Blueprint
+from flask import Flask, render_template, request, Blueprint, jsonify
 
 DATABASE = Path(__file__).parent / 'database.db'
 SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')
 RESULT_DIRECTORY = os.environ.get('DOWNLOAD_DIR')
 BUILD_DB = bool(os.environ.get('BUILD_DB'))
+STORAGE_DIRECTORY = os.environ.get('STORAGE_DIR')
 
 bp = Blueprint('app', __name__, template_folder='templates')
 
@@ -207,5 +213,6 @@ def create_app(build_db=BUILD_DB):
     app = Flask(__name__)
     app.config.from_prefixed_env()
     app.register_blueprint(bp)
+    app.register_blueprint(storage_bp, name='storage_app')
 
     return app
