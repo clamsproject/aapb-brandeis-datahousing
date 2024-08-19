@@ -1,35 +1,30 @@
 from mmif import Mmif
 from clams import mmif_utils
-from flask import Flask, request, jsonify, send_from_directory
-from enum import Enum
-from pydantic import BaseModel
+from flask import Flask, request, jsonify, Blueprint
 from typing import List, Dict
 from typing_extensions import Annotated
 import os
-import yaml
 import hashlib
 import json
-from dotenv import load_dotenv
 
-
-app = Flask(__name__)
+# make blueprint of app to be used in __init__.py
+blueprint = Blueprint('app', __name__)
 # get post request from user
 # read mmif inside post request, get view metadata
 # store in nested directory relating to view metadata
 
 
 
-@app.route("/")
+@blueprint.route("/")
 def root():
     return {"message": "Storage api for pipelined mmif files"}
 
 
-@app.route("/storeapi/mmif/", methods=["POST"])
+@blueprint.route("/storeapi/mmif/", methods=["POST"])
 def upload_mmif():
     body = request.get_data(as_text=True)
     # read local storage directory from .env
-    load_dotenv()
-    directory = os.getenv('STORAGE_DIR')
+    directory = os.environ.get('STORAGE_DIR')
     mmif = Mmif(body)
     # get guid from location
     document = mmif.documents['d1']['properties'].location.split('/')[2].split('.')[0]
@@ -45,8 +40,6 @@ def upload_mmif():
         subdir_list = view.metadata.app.split('/')[3:]
         # create path string for this view
         view_path = os.path.join('', *subdir_list)
-        print(subdir_list)
-        print(view_path)
         # IMPORTANT: We must check for both nonexistent and unresolvable version numbers.
         # In both of these cases we do not want to store the mmif, as it would cause conflicts.
         # TODO: Check back on this because I might be making assumptions about this data that aren't always
@@ -90,7 +83,7 @@ def upload_mmif():
     return "Success", 201
 
 
-@app.route("/searchapi/mmif/", methods=["POST"])
+@blueprint.route("/searchapi/mmif/", methods=["POST"])
 def download_mmif():
     data = json.loads(request.data.decode('utf-8'))
     # get both pipeline and guid from data
@@ -103,8 +96,7 @@ def download_mmif():
     if not pipeline:
         return jsonify({'error': 'Missing required parameters: need at least a pipeline'})
     # load environment variables to concat pipeline with local storage path
-    load_dotenv()
-    directory = os.getenv('storage_dir')
+    directory = os.environ.get('STORAGE_DIR')
     pipeline = os.path.join(directory, pipeline)
     # if this is a "zero-guid" request, the user will receive just the local storage pipeline
     # this allows clients to utilize the api without downloading files (for working with local files)
@@ -202,8 +194,8 @@ def rewind_time(pipeline, guid, num_views):
 
 
 
-if __name__ == "__main__":
-    app.run(port=8912)
+# if __name__ == "__main__":
+#     blueprint.run(port=8912)
 
 
 
