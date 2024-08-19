@@ -29,7 +29,7 @@ def upload_mmif():
     body = request.get_data(as_text=True)
     # read local storage directory from .env
     load_dotenv()
-    directory = os.getenv('storage_dir')
+    directory = os.getenv('STORAGE_DIR')
     mmif = Mmif(body)
     # get guid from location
     document = mmif.documents['d1']['properties'].location.split('/')[2].split('.')[0]
