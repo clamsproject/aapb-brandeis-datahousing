@@ -46,59 +46,62 @@ def identifier_of_first_document(mmif_file: Mmif):
 
 @bp.route(f"{API_PREFIX}/upload", methods=["POST"])
 def upload_mmif():
-    body = request.get_data(as_text=True)
-    mmif = Mmif(body)
-    # TODO (krim @ 3/21/25): hardcoding of document id might be a bad idea,
-    # fix this after https://github.com/clamsproject/mmif-python/pull/304 is merged
-    # NOTE (marc @ 4/15/25): I had examples where the identifier was not 'd1' so I got 
-    # rid of the hard-wired doc id with the hack below awaiting the merge above
-    identifier = identifier_of_first_document(mmif)
-    guid = guidhandler.get_aapb_guid_from(mmif.get_document_by_id(identifier).location)
-    cur_root = Path(STORAGE_DIRECTORY)
-    #print('>>>', guid)
-    #print('---', cur_root)
-    last_suffix = None
-    mmif_fname = None
-    for view in mmif.views:
-        if not view.annotations and view.metadata.warnings:
-            # skip "warning" views
-            continue
-        # now we want to convert the parameter dictionary to a string and then hash it.
-        # this hash will be the name of another subdirectory.
-        try:
-            param_dict = view.metadata.parameters
-            param_list = ['='.join(pair) for pair in param_dict.items()]
-            param_list.sort()
-            param_string = ','.join(param_list)
-        except KeyError:
-            param_dict = ""
-            param_string = ""
-        # hash the (sorted and concatenated list of params) string and join with path
-        # NOTE: this is *not* for security purposes, so the usage of md5 is not an issue.
-        param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
-        appp = param_hash
-        appn, appv = split_appname_appversion(view.metadata.app)
-        if appv is None:
-            return jsonify({'error': f'app {appn} version is underspecified'}), 400
-        # TODO (krim @ 3/21/25): we might want "sanitize" appn, appv, appp to make sure they are valid directory names
-        cur_suffix = Path(appn) / appv / appp
-        if cur_suffix != last_suffix:
-            cur_root = cur_root / cur_suffix
-            last_suffix = cur_suffix
-        cur_root.mkdir(parents=True, exist_ok=True)
-        with open(cur_root.parent / f'{appp}.json', 'w') as f:
-            json.dump(param_dict, f, indent=2)
-        mmif_fname = cur_root / f'{guid}.mmif'
+    try:
+        body = request.get_data(as_text=True)
+        mmif = Mmif(body)
+        # TODO (krim @ 3/21/25): hardcoding of document id might be a bad idea,
+        # fix this after https://github.com/clamsproject/mmif-python/pull/304 is merged
+        # NOTE (marc @ 4/15/25): I had examples where the identifier was not 'd1' so I got 
+        # rid of the hard-wired doc id with the hack below awaiting the merge above
+        identifier = identifier_of_first_document(mmif)
+        guid = guidhandler.get_aapb_guid_from(mmif.get_document_by_id(identifier).location)
+        cur_root = Path(STORAGE_DIRECTORY)
+        #print('>>>', guid)
+        #print('---', cur_root)
+        last_suffix = None
+        mmif_fname = None
+        for view in mmif.views:
+            if not view.annotations and view.metadata.warnings:
+                # skip "warning" views
+                continue
+            # now we want to convert the parameter dictionary to a string and then hash it.
+            # this hash will be the name of another subdirectory.
+            try:
+                param_dict = view.metadata.parameters
+                param_list = ['='.join(pair) for pair in param_dict.items()]
+                param_list.sort()
+                param_string = ','.join(param_list)
+            except KeyError:
+                param_dict = ""
+                param_string = ""
+            # hash the (sorted and concatenated list of params) string and join with path
+            # NOTE: this is *not* for security purposes, so the usage of md5 is not an issue.
+            param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
+            appp = param_hash
+            appn, appv = split_appname_appversion(view.metadata.app)
+            if appv is None:
+                return jsonify({'error': f'app {appn} version is underspecified'}), 400
+            # TODO (krim @ 3/21/25): we might want "sanitize" appn, appv, appp to make sure they are valid directory names
+            cur_suffix = Path(appn) / appv / appp
+            if cur_suffix != last_suffix:
+                cur_root = cur_root / cur_suffix
+                last_suffix = cur_suffix
+            cur_root.mkdir(parents=True, exist_ok=True)
+            with open(cur_root.parent / f'{appp}.json', 'w') as f:
+                json.dump(param_dict, f, indent=2)
+            mmif_fname = cur_root / f'{guid}.mmif'
 
-    if not mmif_fname:
-        return jsonify({'error': 'no contentful views in the mmif'}), 400
-    if mmif_fname.exists():
-        msg = f"File already exists: {mmif_fname}\n"
-    else:
-        with open(mmif_fname, 'w') as f:
-            f.write(mmif.serialize())
-            msg = f"Successfully stored: {mmif_fname}\n"
-    return msg, 201
+        if not mmif_fname:
+            return jsonify({'error': 'no contentful views in the mmif'}), 400
+        if mmif_fname.exists():
+            msg = f"File already exists: {mmif_fname}\n"
+        else:
+            with open(mmif_fname, 'w') as f:
+                f.write(body)
+                msg = f"Successfully stored: {mmif_fname}\n"
+        return msg, 201
+    except Exception as e:
+        return f"ERROR: {type(e).__name__} - {e}\n", 400
 
 
 @bp.route(f"{API_PREFIX}/download", methods=["POST"])
