@@ -22,19 +22,16 @@ API_PREFIX = '/storeapi'
 def split_appname_appversion(long_app_id):
     """
     Helper method for splitting the app name and version number from a json string.
-    This assumes the identifier is in the form of "uri://APP_DOMAIN/APP_NAME/APP_VERSION"
+    This assumes the long identifier looks like "uri://APP_DOMAIN/APP_NAME/APP_VERSION"
     """
-    try:
-        _, appname, appversion = long_app_id.rsplit('/', maxsplit=2)
-    except ValueError:
-        return long_app_id, None
-    if appname.endswith(appversion):
-        appname = appname[:-len(appversion) - 1]
-    if appname.endswith('/'):
-        appname = appname[:-1]
-    if appversion == 'unresolvable':
-        appversion = None
-    return appname, appversion
+    app_path = Path(long_app_id).parts
+    app_name = app_path[2] if len(app_path) > 2 else None
+    app_version = app_path[3] if len(app_path) > 3 else None
+    if app_name.endswith(app_version):
+        app_name = app_name[:-len(app_version) - 1]
+    if app_version == 'unresolvable':
+        app_version = None
+    return app_name, app_version
 
 
 def identifier_of_first_document(mmif_file: Mmif):
