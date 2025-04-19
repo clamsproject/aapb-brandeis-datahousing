@@ -4,12 +4,12 @@ from datetime import date
 from pathlib import Path
 from string import Template
 
-from flask import Flask, render_template, request, Blueprint
+from flask import Flask, request, Blueprint
 
 DATABASE = Path(__file__).parent / 'database.db'
 SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')
 RESULT_DIRECTORY = os.environ.get('DOWNLOAD_DIR')
-BUILD_DB = bool(os.environ.get('BUILD_DB'))
+BUILD_DB = bool(int(os.environ.get('BUILD_DB')))
 
 bp = Blueprint('app', __name__, template_folder='templates')
 
@@ -18,6 +18,7 @@ def shorten_guid(guid):
     if guid.startswith('cpb'):
         return '-'.join(guid[10:].split('.', 1)[0].split('-')[:2])
     return guid
+
 
 def check_symlink(fpath):
     """checks if a file is a symlink"""
@@ -29,11 +30,13 @@ def check_symlink(fpath):
         return True
     return False
 
+
 def batch_insert(connection, batch):
     """inserts a batch of files into the database"""
     q = f"INSERT INTO map VALUES {batch};"
     connection.execute(q)
     connection.commit()
+
 
 def initialize(start):
     """initializes the database"""
@@ -57,7 +60,7 @@ def initialize(start):
                 files.append(file)
                 if c % 1000 == 0:
                     batch_insert(connection, ", ".join(files))
-                    files= []
+                    files = []
                     print(c, f)
                 c += 1
         if len(files) > 0:
@@ -122,7 +125,7 @@ def insert_into_db(connection, guid, result):
 
 
 def aapb_generate(guid, extension):
-    """generates a file from AAPB given a guid and file type"""
+    """generates a file from AAPB given a guid and file type, for future use, currently NOT IN USE"""
     # TODO: needs to be updated with AAPB API
     root = Path(SEARCH_DIRECTORY)
     dir = root.joinpath(RESULT_DIRECTORY)
@@ -131,34 +134,6 @@ def aapb_generate(guid, extension):
     filename = dir.joinpath(guid + extension)
     filename.touch()
     return filename
-
-
-@bp.route('/')
-def main():
-    return render_template('home.html')
-
-
-@bp.route('/search', methods=['GET', 'POST'])
-def search():
-    if request.method == 'POST':
-        files = request.form.getlist('file_type')
-        guid = request.form['GUID']
-        connection = get_db_connection()
-        paths = database_search(connection, guid, files)
-        if len(paths) == 0:
-            results = directory_search(guid)
-            if len(results) == 0:
-                connection.close()
-                return render_template('filenotfound.html', GUID=guid)
-            else:
-                for result in results:
-                    insert_into_db(connection, guid, result)
-                paths = database_search(connection, guid, files)
-                connection.commit()
-        connection.close()
-        return render_template('search_results.html', GUID=guid, paths=paths)
-    else:
-        return render_template('search.html')
 
 
 @bp.route('/searchapi', methods=['GET'])
@@ -186,19 +161,6 @@ def search_api():
             return [path['server_path'] for path in paths]
     else:
         return 'The requested file does not exist in our server'
-
-
-@bp.route('/generate', methods=['GET', 'POST'])
-def add():
-    if request.method == 'POST':
-        extension = request.form['file_extension']
-        guid = request.form['GUID']
-        file = aapb_generate(guid, extension)
-        connection = get_db_connection()
-        insert_into_db(connection, guid, file)
-        return render_template('generate_results.html', GUID=guid, path=file)
-    else:
-        return render_template('generate.html')
 
 
 def create_app(build_db=BUILD_DB):
