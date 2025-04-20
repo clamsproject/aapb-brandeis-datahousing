@@ -11,12 +11,13 @@ from mmif import Mmif
 from api import STORAGE_DIRECTORY
 
 # make blueprint of app to be used in __init__.py
-bp = Blueprint('mmif-storage', __name__)
+bp = Blueprint(__file__.split(os.sep)[-1].split('.')[0].replace('_', '-'), __name__)
 # get post request from user
 # read mmif inside post request, get view metadata
 # store in nested directory relating to view metadata
 
 API_PREFIX = '/storeapi'
+
 
 def split_appname_appversion(long_app_id):
     """

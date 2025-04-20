@@ -209,7 +209,7 @@ def create_app(build_db=BUILD_DB):
     app.config.from_prefixed_env()
     app.register_blueprint(bp)
 
-    from api.storage_api import bp as mmif_bp
+    from api.mmif_storage import bp as mmif_bp
     # instead of using `url_prefix`, we use dedicated `API_PREFIX` vars in blueprints
     # this will eliminate unnecessary redirection step (and forced use of `-L` flag in curl command)
     app.register_blueprint(mmif_bp)
