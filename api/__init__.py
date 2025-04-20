@@ -87,7 +87,7 @@ def directory_search(guid):
 
 def file_typer(path):
     """determines the file type based on its extension"""
-    file_types = {'.vtt': 'text', '.txt': 'text', '.mp3': 'audio', '.mp4': 'video', '.mov': 'video', '.xml': 'markup'}
+    file_types = {'.vtt': 'text', '.txt': 'text', '.mp3': 'audio', '.mp4': 'video', '.mov': 'video', 'webm': 'video', 'mkv': 'video', '.xml': 'markup'}
     if path.suffix in file_types:
         return file_types[path.suffix]
     else:
