@@ -3,11 +3,6 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 from string import Template
-from api.storage_api import blueprint as storage_bp
-from mmif import Mmif
-from clams import mmif_utils
-import hashlib
-import json
 
 from flask import Flask, render_template, request, Blueprint, jsonify
 
@@ -213,6 +208,11 @@ def create_app(build_db=BUILD_DB):
     app = Flask(__name__)
     app.config.from_prefixed_env()
     app.register_blueprint(bp)
-    app.register_blueprint(storage_bp, name='storage_app')
+
+    from api.storage_api import bp as mmif_bp
+    # instead of using `url_prefix`, we use dedicated `API_PREFIX` vars in blueprints
+    # this will eliminate unnecessary redirection step (and forced use of `-L` flag in curl command)
+    app.register_blueprint(mmif_bp)
+
 
     return app

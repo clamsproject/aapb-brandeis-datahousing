@@ -1,55 +1,58 @@
-from mmif import Mmif
-from clams import mmif_utils
-from flask import Flask, request, jsonify, Blueprint
-from typing import List, Dict
-from typing_extensions import Annotated
-import os
 import hashlib
 import json
+import os
+from pathlib import Path
+
+from clams import mmif_utils
+from clams_utils.aapb import guidhandler
+from flask import request, jsonify, Blueprint
+from mmif import Mmif
+
+from api import STORAGE_DIRECTORY
 
 # make blueprint of app to be used in __init__.py
-blueprint = Blueprint('app', __name__)
+bp = Blueprint('mmif-storage', __name__)
 # get post request from user
 # read mmif inside post request, get view metadata
 # store in nested directory relating to view metadata
 
+API_PREFIX = '/storeapi'
+
+def split_appname_appversion(long_app_id):
+    """
+    Helper method for splitting the app name and version number from a json string.
+    This assumes the identifier is in the form of "uri://APP_DOMAIN/APP_NAME/APP_VERSION"
+    """
+    try:
+        _, appname, appversion = long_app_id.rsplit('/', maxsplit=2)
+    except ValueError:
+        return long_app_id, None
+    if appname.endswith(appversion):
+        appname = appname[:-len(appversion) - 1]
+    if appname.endswith('/'):
+        appname = appname[:-1]
+    if appversion == 'unresolvable':
+        appversion = None
+    return appname, appversion
 
 
-@blueprint.route("/")
-def root():
-    return {"message": "Storage api for pipelined mmif files"}
-
-
-@blueprint.route("/storeapi/mmif/", methods=["POST"])
+@bp.route(f"{API_PREFIX}/upload", methods=["POST"])
 def upload_mmif():
     body = request.get_data(as_text=True)
     # read local storage directory from .env
     directory = os.environ.get('STORAGE_DIR')
     mmif = Mmif(body)
-    # get guid from location
-    document = mmif.documents['d1']['properties'].location.split('/')[2].split('.')[0]
-    # append '.mmif' to guid
-    document = document + '.mmif'
-    # IMPORTANT: In order to enable directory creation after this loop and also store each parameter
-    # dictionary in its proper directory, I create a dictionary to associate the current path level with
-    # its param dict. After this loop, I create the dirs and then iterate through this dictionary to
-    # place the param dicts in their proper spots.
-    param_path_dict = {}
-    for view in mmif.views:
-        # this should return the back half of the app url, so just app name and version number
-        subdir_list = view.metadata.app.split('/')[3:]
-        # create path string for this view
-        view_path = os.path.join('', *subdir_list)
-        # IMPORTANT: We must check for both nonexistent and unresolvable version numbers.
-        # In both of these cases we do not want to store the mmif, as it would cause conflicts.
-        # TODO: Check back on this because I might be making assumptions about this data that aren't always
-        # TODO: true, e.g about list length. Far as I can tell though it aligns with typical mmif metadata.
-        if len(subdir_list) < 2 or subdir_list[1] == "unresolvable":
-            return jsonify({'error': f'app {subdir_list[0]} version is underspecified'}), 400
+    # get guid from the FIRST document in the mmif
+    # TODO (krim @ 3/21/25): hardcoding of document id might be a bad idea, fix this after https://github.com/clamsproject/mmif-python/pull/304 is merged
+    guid = guidhandler.get_aapb_guid_from(mmif.get_document_by_id('d1').location)
+    cur_root = Path(STORAGE_DIRECTORY)
+    mmif_fname = None
+    for view_i, view in enumerate(mmif.views):
+
         # now we want to convert the parameter dictionary to a string and then hash it.
         # this hash will be the name of another subdirectory.
         try:
-            param_dict = view.metadata["parameters"]
+            param_dict = view.metadata.parameters
             param_list = ['='.join(pair) for pair in param_dict.items()]
             param_list.sort()
             param_string = ','.join(param_list)
@@ -59,31 +62,27 @@ def upload_mmif():
         # hash the (sorted and concatenated list of params) string and join with path
         # NOTE: this is *not* for security purposes, so the usage of md5 is not an issue.
         param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
-        view_path = os.path.join(view_path, param_hash)
-        # check if this is a duplicate view. if it is, skip the current view.
-        # NOTE: duplicate views are those with the same app, version number, AND parameter dict.
-        if view_path in directory:
-            continue
-        # create path by joining directory with the current view path
-        directory = os.path.join(directory, view_path)
-        # now that we know it's not a duplicate view and we have the proper path location, we
-        # store it and the associated param dict inside param_path_dict.
-        param_path_dict[directory] = param_dict
-    # we have finished looping through the views. now time to create the directories
-    # and dump the param dicts
-    os.makedirs(directory, exist_ok=True)
-    for path in param_path_dict:
-        file_path = os.path.join(os.path.dirname(path), 'parameters.json')
-        with open(file_path, "w") as f:
-            json.dump(param_path_dict[path], f)
-    # put mmif into the lowest level directory with filename based on guid
-    file_path = os.path.join(directory, document)
-    with open(file_path, "w") as f:
-        f.write(mmif.serialize())
-    return "Success", 201
+        appp = param_hash
+        appn, appv = split_appname_appversion(view.metadata.app)
+        if appv is None:
+            return jsonify({'error': f'app {appn} version is underspecified'}), 400
+        # TODO (krim @ 3/21/25): we might want "sanitize" appn, appv, appp to make sure they are valid directory names
+        cur_root = cur_root / appn / appv / appp
+        cur_root.mkdir(parents=True, exist_ok=True)
+        with open(cur_root.parent / f'{appp}.json', 'w') as f:
+            json.dump(param_dict, f, indent=2)
+    if not mmif_fname:
+        return jsonify({'error': 'no contentful views in the mmif'}), 400
+    if mmif_fname.exists():
+        msg = f"File already exists: {mmif_fname}\n"
+    else:
+        with open(mmif_fname, 'w') as f:
+            f.write(mmif.serialize())
+            msg = f"Successfully stored: {mmif_fname}\n"
+    return msg, 201
 
 
-@blueprint.route("/searchapi/mmif/", methods=["POST"])
+@bp.route(f"{API_PREFIX}/download", methods=["POST"])
 def download_mmif():
     data = json.loads(request.data.decode('utf-8'))
     # get both pipeline and guid from data
@@ -190,13 +189,3 @@ def rewind_time(pipeline, guid, num_views):
                     rewound = mmif_utils.rewind.rewind_mmif(mmif, len(mmif.views) - num_views)
                 return rewound.serialize()
     raise FileNotFoundError
-
-
-
-
-# if __name__ == "__main__":
-#     blueprint.run(port=8912)
-
-
-
-
