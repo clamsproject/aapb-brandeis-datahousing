@@ -37,14 +37,26 @@ def split_appname_appversion(long_app_id):
     return appname, appversion
 
 
+def identifier_of_first_document(mmif_file: Mmif):
+    for doc in mmif_file.documents:
+        if doc.id:
+            return doc.id
+    return None
+
+
 @bp.route(f"{API_PREFIX}/upload", methods=["POST"])
 def upload_mmif():
     body = request.get_data(as_text=True)
     mmif = Mmif(body)
-    # get guid from the FIRST document in the mmif
-    # TODO (krim @ 3/21/25): hardcoding of document id might be a bad idea, fix this after https://github.com/clamsproject/mmif-python/pull/304 is merged
-    guid = guidhandler.get_aapb_guid_from(mmif.get_document_by_id('d1').location)
+    # TODO (krim @ 3/21/25): hardcoding of document id might be a bad idea,
+    # fix this after https://github.com/clamsproject/mmif-python/pull/304 is merged
+    # NOTE (marc @ 4/15/25): I had examples where the identifier was not 'd1' so I got 
+    # rid of the hard-wired doc id with the hack below awaiting the merge above
+    identifier = identifier_of_first_document(mmif)
+    guid = guidhandler.get_aapb_guid_from(mmif.get_document_by_id(identifier).location)
     cur_root = Path(STORAGE_DIRECTORY)
+    #print('>>>', guid)
+    #print('---', cur_root)
     last_suffix = None
     mmif_fname = None
     for view in mmif.views:
