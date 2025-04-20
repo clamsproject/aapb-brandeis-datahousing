@@ -40,16 +40,17 @@ def split_appname_appversion(long_app_id):
 @bp.route(f"{API_PREFIX}/upload", methods=["POST"])
 def upload_mmif():
     body = request.get_data(as_text=True)
-    # read local storage directory from .env
-    directory = os.environ.get('STORAGE_DIR')
     mmif = Mmif(body)
     # get guid from the FIRST document in the mmif
     # TODO (krim @ 3/21/25): hardcoding of document id might be a bad idea, fix this after https://github.com/clamsproject/mmif-python/pull/304 is merged
     guid = guidhandler.get_aapb_guid_from(mmif.get_document_by_id('d1').location)
     cur_root = Path(STORAGE_DIRECTORY)
+    last_suffix = None
     mmif_fname = None
-    for view_i, view in enumerate(mmif.views):
-
+    for view in mmif.views:
+        if not view.annotations and view.metadata.warnings:
+            # skip "warning" views
+            continue
         # now we want to convert the parameter dictionary to a string and then hash it.
         # this hash will be the name of another subdirectory.
         try:
@@ -68,10 +69,15 @@ def upload_mmif():
         if appv is None:
             return jsonify({'error': f'app {appn} version is underspecified'}), 400
         # TODO (krim @ 3/21/25): we might want "sanitize" appn, appv, appp to make sure they are valid directory names
-        cur_root = cur_root / appn / appv / appp
+        cur_suffix = Path(appn) / appv / appp
+        if cur_suffix != last_suffix:
+            cur_root = cur_root / cur_suffix
+            last_suffix = cur_suffix
         cur_root.mkdir(parents=True, exist_ok=True)
         with open(cur_root.parent / f'{appp}.json', 'w') as f:
             json.dump(param_dict, f, indent=2)
+        mmif_fname = cur_root / f'{guid}.mmif'
+
     if not mmif_fname:
         return jsonify({'error': 'no contentful views in the mmif'}), 400
     if mmif_fname.exists():
