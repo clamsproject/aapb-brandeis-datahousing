@@ -19,6 +19,10 @@ bp = Blueprint(__file__.split(os.sep)[-1].split('.')[0].replace('_', '-'), __nam
 API_PREFIX = '/storeapi'
 
 
+class StorageServerError(Exception):
+    pass
+
+
 def split_appname_appversion(long_app_id):
     """
     Helper method for splitting the app name and version number from a json string.
@@ -41,7 +45,7 @@ def identifier_of_first_document(mmif_file: Mmif):
     return None
 
 
-@bp.route(f"{API_PREFIX}/upload", methods=["POST"])
+@bp.post(f"{API_PREFIX}/upload")
 def upload_mmif():
     try:
         body = request.get_data(as_text=True)
@@ -53,8 +57,6 @@ def upload_mmif():
         identifier = identifier_of_first_document(mmif)
         guid = guidhandler.get_aapb_guid_from(mmif.get_document_by_id(identifier).location)
         cur_root = Path(STORAGE_DIRECTORY)
-        #print('>>>', guid)
-        #print('---', cur_root)
         last_suffix = None
         mmif_fname = None
         for view in mmif.views:
@@ -87,7 +89,6 @@ def upload_mmif():
             with open(cur_root.parent / f'{appp}.json', 'w') as f:
                 json.dump(param_dict, f, indent=2)
             mmif_fname = cur_root / f'{guid}.mmif'
-
         if not mmif_fname:
             return jsonify({'error': 'no contentful views in the mmif'}), 400
         if mmif_fname.exists():
@@ -98,17 +99,17 @@ def upload_mmif():
                 msg = f"Successfully stored: {mmif_fname}\n"
         return msg, 201
     except Exception as e:
-        return f"ERROR: {type(e).__name__} - {e}\n", 400
+        return {"error": f"{type(e).__name__} - {e}"}, 400
 
 
-@bp.route(f"{API_PREFIX}/download", methods=["POST"])
+@bp.post(f"{API_PREFIX}/download")
 def download_mmif():
     data = json.loads(request.data.decode('utf-8'))
     # get both pipeline and guid from data
     # obtain pipeline using helper method
     pipeline = pipeline_from_param_json(data)
     # get number of views for rewind if necessary
-    num_views = len(data['pipeline'])
+    num_views = len(data.get('pipeline', []))
     guid = data.get('guid')
     # validate existence of pipeline, guid is not necessary if you just want the pipeline returned
     if not pipeline:
@@ -116,52 +117,13 @@ def download_mmif():
     # load environment variables to concat pipeline with local storage path
     directory = os.environ.get('STORAGE_DIR')
     pipeline = os.path.join(directory, pipeline)
-    # if this is a "zero-guid" request, the user will receive just the local storage pipeline
-    # this allows clients to utilize the api without downloading files (for working with local files)
     if not guid:
-        return jsonify({'pipeline': pipeline})
-    # CHECK IF GUID IS SINGLE VALUE OR LIST
+        return zero_guid_download_response(pipeline)
+    # Checking if the GUID is a single value or a list
     if not isinstance(guid, list):
-        guid = guid + ".mmif"
-        # get file from storage directory
-        path = os.path.join(pipeline, guid)
-        # if file exists, we can return it
-        try:
-            with open(path, 'r') as file:
-                mmif = file.read()
-            return mmif
-        # otherwise we will use the rewinder
-        # this assumes the user has provided a subset of a mmif pipeline that we have previously stored
-        # in the case where this is not true, we return a FileNotFound error.
-        except FileNotFoundError:
-            return rewind_time(pipeline, guid, num_views)
+        return single_guid_download_response(pipeline, guid, num_views)
     else:
-        # in the case where we want multiple mmifs retrieved, we construct a json to store
-        # each guid as a key and each mmif as the value.
-        mmifs_by_guid = dict()
-        for curr_guid in guid:
-            curr_guid = curr_guid + ".mmif"
-            # get file from storage directory
-            path = os.path.join(pipeline, curr_guid)
-            # if file exists, we can put it in the json
-            try:
-                with open(path, 'r') as file:
-                    mmif = file.read()
-                # place serialized mmif into dictionary/json with guid key (remove file ext)
-                mmifs_by_guid[curr_guid.split('.')[0]] = mmif
-            # otherwise we will use the rewinder
-            # as with the single-guid case, this assumes the pipeline is a proper subset of
-            # another guid-matching mmif's pipeline.
-            # otherwise we store a string representing the lack of a file for that guid.
-            except FileNotFoundError:
-                try:
-                    mmif = rewind_time(pipeline, curr_guid, num_views)
-                    mmifs_by_guid[curr_guid.split('.')[0]] = mmif
-                except FileNotFoundError:
-                    # TODO: figure out a good way to mark file not found
-                    mmifs_by_guid[curr_guid.split('.')[0]] = "File not found"
-        # now turn the dictionary into a json and return it
-        return json.dumps(mmifs_by_guid)
+        return multi_guid_download_response(pipeline, guid, num_views)
 
 
 # helper method for extracting pipeline
@@ -191,11 +153,71 @@ def pipeline_from_param_json(param_json):
     return pipeline
 
 
+def zero_guid_download_response(pipeline: str):
+    # if this is a "zero-guid" request, the user will receive just the local storage
+    # pipeline this allows clients to utilize the api without downloading files (for
+    # working with local files)
+    filenames = [p.stem for p in Path(pipeline).glob('*')]
+    return jsonify({'pipeline': pipeline, 'filenames': filenames})
+
+
+def single_guid_download_response(pipeline: str, guid: str, num_views: int):
+    """
+    When retrieving the MMIF object for a pipeline and a single GUID, just return
+    the MMIF object or an error if the search failed.
+    """
+    try:
+        mmif = get_mmif_for_guid(pipeline, guid, num_views)
+        return mmif
+    except StorageServerError as e:
+        return {"error": str(e)}, 201
+
+
+def multi_guid_download_response(pipeline: str, guids: list, num_views: int):
+    """
+    When retrieving multiple MMIFs for a pipeline, we construct a json object to
+    store each guid as a key and each MMIF as the value.
+    """
+    mmifs_by_guid = dict()
+    for guid in guids:
+        response = single_guid_download_response(pipeline, guid, num_views)
+        try:
+            mmif = get_mmif_for_guid(pipeline, guid, num_views)
+            mmifs_by_guid[guid] = mmif
+        except StorageServerError as e:
+            mmifs_by_guid[guid] = {"error": str(e)}
+    return mmifs_by_guid
+
+
+def get_mmif_for_guid(pipeline: str, guid: str, num_views: int):
+    """
+    Retrieve the MMIF file for a pipeline and GUID. If none was found raise a
+    StorageServerError.
+    """
+    guid = guid + ".mmif"
+    path = os.path.join(pipeline, guid)
+    # if filepath exists, we can return it
+    try:
+        with open(path, 'r') as file:
+            mmif = json.loads(file.read())
+        return mmif
+    # otherwise we will use the rewinder to check if the user provided a prefix of a
+    # mmif pipeline that we have previously stored
+    except FileNotFoundError:
+        try:
+            return rewind_time(pipeline, guid, num_views)
+        except FileNotFoundError:
+            # the rewinder does not always succeed so we catch this exception again
+            # and raise an application-specific exception
+            raise StorageServerError(f'Did not find: {guid.split(".")[0]}')
+
+
 def rewind_time(pipeline, guid, num_views):
     """
-    This method takes in a pipeline (path), a guid, and a number of views, and uses os.walk to iterate through
-    directories that begin with that pipeline. It takes the first mmif file that matches the guid and uses the
-    rewind feature to include only the views indicated by the pipeline.
+    This method takes in a pipeline (path), a guid, and a number of views, and uses
+    os.walk to iterate through directories that begin with that pipeline. It takes
+    the first mmif file that matches the guid and uses the rewind feature to include
+    only the views indicated by the pipeline.
     """
     for home, dirs, files in os.walk(pipeline):
         # find mmif with matching guid to rewind
