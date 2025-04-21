@@ -7,6 +7,7 @@ At the moment, the server is used to resovle AAPB GUIDs to local file paths, and
 ## Usage 
 
 ### Within CLAMS apps
+
 The server deployment address is stored as [a organization variable](https://github.com/organizations/clamsproject/settings/variables/actions). To use the server (and `baapb` scheme in MMIF document locations), set `BAAPB_RESOLVER_ADDRESS` environment variable to the deployment address, and install the client plugin. 
 
 
@@ -15,9 +16,7 @@ All `brandeis` tagged pre-built container images (available in https://github.co
 
 ### Server API
 
-There are API routes for (1) searching the assets (typically videos, audio streams and transcripts), (2) uploading MMIF files and (3) downloading MMIF files.
-
-To query available assets use the `searchapi` route with these two query string parameters:
+To query available assets use the `searchapi` route with these query string parameters:
 
 * `file` — indicates the type of the file to search for: one of `text`, `image`, `audio`, `video`, `markup` and `other`
 * `guid` — the AAPB GUID to search for (either `cpb-aacip-xxx-yyyyyyyyyy` or simply `xxx-yyyyyyyyyy` )
@@ -29,7 +28,7 @@ Examples:
 
 ```
 curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h'
-curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&type=video'
+curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video'
 curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&onlyfirst=true'
 ```
 
