@@ -8,7 +8,7 @@ Usage:
 
 $ python populate.py <directory> [-d] [-c INT]
 
-This walks through the entire directory and tries to upload and file with the .mmif
+This walks through the entire directory and tries to upload all files with the .mmif
 extension. It assumes that MMIF files are always inside directories starting with
 "preds@". Failures are written to the log. When debug=True the log name will be just
 "log.txt", otherwise the name will include a timestamp. The -c option limits the

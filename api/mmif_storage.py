@@ -31,7 +31,7 @@ def split_appname_appversion(long_app_id):
     app_path = Path(long_app_id).parts
     app_name = app_path[2] if len(app_path) > 2 else None
     app_version = app_path[3] if len(app_path) > 3 else None
-    if app_name.endswith(app_version):
+    if app_version is not None and app_name.endswith(app_version):
         app_name = app_name[:-len(app_version) - 1]
     if app_version == 'unresolvable':
         app_version = None
@@ -99,7 +99,7 @@ def upload_mmif():
                 msg = f"Successfully stored: {mmif_fname}\n"
         return msg, 201
     except Exception as e:
-        return {"error": f"{type(e).__name__} - {e}"}, 400
+        return {"error": f"{type(e).__name__} - {e}", }, 400
 
 
 @bp.post(f"{API_PREFIX}/download")

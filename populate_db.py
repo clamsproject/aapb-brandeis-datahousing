@@ -1,13 +1,15 @@
 """
 
-This is some code to populate an assets directory with empty files and then populate
-the DB so we can benchmark performance.
+This is some code to populate an assets directory with empty files, which can
+then be used to populate the database in api/database.db so we can benchmark
+performance.
 
 It is for development and it is not needed to run the server in any way.
 
-After you run this you should restart the server.
+After you run this you should restart the server to populate the database.
 
-It uses a file that was at some point created from the WGBH data director on child.cs-i.
+It uses a file that was at some point created from the WGBH data directory on
+child.cs-i.brandeis.edu.
 
 """
 
