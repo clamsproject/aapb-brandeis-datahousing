@@ -4,12 +4,15 @@ from datetime import date
 from pathlib import Path
 from string import Template
 
-from flask import Flask, render_template, request, Blueprint
+from flask import Flask, render_template, request, Blueprint, jsonify
+
 
 DATABASE = Path(__file__).parent / 'database.db'
 SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')
 RESULT_DIRECTORY = os.environ.get('DOWNLOAD_DIR')
-BUILD_DB = bool(os.environ.get('BUILD_DB'))
+BUILD_DB = bool(int(os.environ.get('BUILD_DB')))
+STORAGE_DIRECTORY = os.environ.get('STORAGE_DIR')
+
 
 bp = Blueprint('app', __name__, template_folder='templates')
 
@@ -18,6 +21,7 @@ def shorten_guid(guid):
     if guid.startswith('cpb'):
         return '-'.join(guid[10:].split('.', 1)[0].split('-')[:2])
     return guid
+
 
 def check_symlink(fpath):
     """checks if a file is a symlink"""
@@ -29,16 +33,17 @@ def check_symlink(fpath):
         return True
     return False
 
+
 def batch_insert(connection, batch):
     """inserts a batch of files into the database"""
     q = f"INSERT INTO map VALUES {batch};"
     connection.execute(q)
     connection.commit()
 
-def initialize(start):
-    """initializes the database"""
+
+def initialize_database(build_database: bool):
     connection = sqlite3.connect(DATABASE)
-    if start:
+    if build_database:
         with open(Path(__file__).parent / 'schema_scratch.sql') as f:
             connection.executescript(f.read())
         files = []
@@ -202,10 +207,16 @@ def add():
 
 
 def create_app(build_db=BUILD_DB):
-    initialize(build_db)
+
+    initialize_database(build_db)
 
     app = Flask(__name__)
     app.config.from_prefixed_env()
     app.register_blueprint(bp)
+
+    from api.mmif_storage import bp as mmif_bp
+    # instead of using `url_prefix`, we use dedicated `API_PREFIX` vars in blueprints
+    # this will eliminate unnecessary redirection step (and forced use of `-L` flag in curl command)
+    app.register_blueprint(mmif_bp)
 
     return app

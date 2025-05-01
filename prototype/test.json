@@ -1,0 +1,22 @@
+{
+  "pipeline": {
+    "swt-detection/unresolvable": {
+    },
+
+    "simple-timepoints-stitcher/v1.3": {
+      "labelMap": "['B:bars', 'S:slate', 'S-H:slate', 'S-C:slate', 'S-D:slate', 'S-G:slate', 'I:chyron', 'N:chyron', 'Y:chyron', 'C:credits']"
+    },
+
+    "doctr-wrapper/unresolvable": {
+      "tfLabel": "chyron",
+      "pretty": ""
+    },
+
+    "doctr-wrapper": {
+      "tfLabel": "['credits', 'credit']",
+      "pretty": ""
+    }
+
+  },
+  "guid": "cpb-aacip-0515ac167c0"
+}
