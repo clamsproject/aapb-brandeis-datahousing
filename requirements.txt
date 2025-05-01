@@ -2,6 +2,5 @@ flask==2.*
 python-dotenv==1.*
 flask-dotenv
 gunicorn
-
 clams_python
 clams_utils
