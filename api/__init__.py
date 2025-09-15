@@ -11,6 +11,18 @@ DATABASE = Path(__file__).parent / 'database.db'
 SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')
 RESULT_DIRECTORY = os.environ.get('DOWNLOAD_DIR')
 BUILD_DB = bool(int(os.environ.get('BUILD_DB')))
+# Asset file types
+file_types = [
+    ('text', ['.vtt', '.txt', '.srt', '.json']),
+    ('markup', ['.xml']),
+    ('image', ['.png', '.jpeg', '.jpg']),
+    ('audio', ['.mp3', '.wav']),
+    ('video', ['.mp4', '.mov', 'webm', 'mkv'])]
+
+file_types_idx = {}
+for file_type, extensions in file_types:
+    for extension in extensions:
+        file_types_idx[extension] = file_type
 
 bp = Blueprint('app', __name__, template_folder='templates')
 
@@ -106,11 +118,7 @@ def directory_search(guid):
 
 def file_typer(path):
     """determines the file type based on its extension"""
-    file_types = {'.vtt': 'text', '.txt': 'text', '.mp3': 'audio', '.mp4': 'video', '.mov': 'video', '.xml': 'markup'}
-    if path.suffix in file_types:
-        return file_types[path.suffix]
-    else:
-        return 'other'
+    return file_types_idx.get(path.suffix, 'other')
 
 
 def database_search(connection, guid, types):
