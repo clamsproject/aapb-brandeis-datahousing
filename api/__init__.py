@@ -1,15 +1,16 @@
 import os
 import sqlite3
+import time
 from datetime import date
 from pathlib import Path
 from string import Template
 
-from flask import Flask, render_template, request, Blueprint
+from flask import Flask, request, Blueprint
 
 DATABASE = Path(__file__).parent / 'database.db'
 SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')
 RESULT_DIRECTORY = os.environ.get('DOWNLOAD_DIR')
-BUILD_DB = bool(os.environ.get('BUILD_DB'))
+BUILD_DB = bool(int(os.environ.get('BUILD_DB')))
 # Asset file types
 file_types = [
     ('text', ['.vtt', '.txt', '.srt', '.json']),
@@ -26,10 +27,19 @@ for file_type, extensions in file_types:
 bp = Blueprint('app', __name__, template_folder='templates')
 
 
+def print_settings():
+    """Debugging method."""
+    print(f'>>   DATABASE           =  {DATABASE}')
+    print(f'>>   SEARCH_DIRECTORY   =  {SEARCH_DIRECTORY}')
+    print(f'>>   RESULT_DIRECTORY   =  {RESULT_DIRECTORY}')
+    print(f'>>   BUILD_DB           =  {BUILD_DB}')
+
+
 def shorten_guid(guid):
     if guid.startswith('cpb'):
         return '-'.join(guid[10:].split('.', 1)[0].split('-')[:2])
     return guid
+
 
 def check_symlink(fpath):
     """checks if a file is a symlink"""
@@ -41,35 +51,43 @@ def check_symlink(fpath):
         return True
     return False
 
+
 def batch_insert(connection, batch):
     """inserts a batch of files into the database"""
     q = f"INSERT INTO map VALUES {batch};"
     connection.execute(q)
     connection.commit()
 
-def initialize(start):
-    """initializes the database"""
+
+def initialize_database(populate: bool = False):
+    """
+    Creates the database from the schema. If populate is True then an existing
+    table in the database will be dropped, recreated and populated from paths in
+    the assets directory. Otherwise the code just makes sure that the table exists.
+    """
     connection = sqlite3.connect(DATABASE)
-    if start:
+    if populate:
         with open(Path(__file__).parent / 'schema_scratch.sql') as f:
             connection.executescript(f.read())
         files = []
-        file_template = Template("""('${guid}', '${type}', '${path}', '${created}', '${accessed}')""")
+        file_template = Template(
+            """('${guid}', '${type}', '${path}', '${created}', '${accessed}')""")
         c = 0
         sdir = Path(SEARCH_DIRECTORY)
         # make sure the directory exists
         sdir.iterdir()
-        import time
         time.sleep(1)
         for f in sdir.glob("**/*"):
             if check_symlink(f):
                 continue
             if f.name.startswith('cpb') and '/.' not in str(f):
-                file = file_template.substitute(guid=shorten_guid(f.stem), type=file_typer(f), path=str(f), created=date.today(), accessed=date.today())
+                file = file_template.substitute(
+                    guid=shorten_guid(f.stem), type=file_typer(f), path=str(f),
+                    created=date.today(), accessed=date.today())
                 files.append(file)
                 if c % 1000 == 0:
                     batch_insert(connection, ", ".join(files))
-                    files= []
+                    files = []
                     print(c, f)
                 c += 1
         if len(files) > 0:
@@ -87,7 +105,8 @@ def get_db_connection():
 
 
 def directory_search(guid):
-    """returns the locations of all files in the SEARCH_DIRECTORY that begin with the given guid"""
+    """returns the locations of all files in the SEARCH_DIRECTORY that begin with the
+    given guid"""
     paths = []
     for file in Path(SEARCH_DIRECTORY).glob("**/*"):
         if check_symlink(file):
@@ -105,6 +124,8 @@ def file_typer(path):
 def database_search(connection, guid, types):
     """searches the database for files"""
     guid = shorten_guid(guid)
+    # TODO: use 'WHERE file_type in (...)'
+    # TODO: use 'WHERE GUID like %?%'
     if len(types) == 1:
         paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID=? and file_type=? GROUP BY file_type, server_path;""", (guid, types[0])).fetchall()
         connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID=? and file_type=?;""", (date.today(), guid, types[0]))
@@ -125,12 +146,14 @@ def insert_into_db(connection, guid, result):
     """inserts new entry into the database"""
     guid = shorten_guid(guid)
     type = file_typer(result)
-    connection.execute("""INSERT INTO map VALUES (?, ?, ?, ?, ?);""", (guid, type, str(result), date.today(), date.today()))
+    connection.execute(
+        """INSERT INTO map VALUES (?, ?, ?, ?, ?);""",
+        (guid, type, str(result), date.today(), date.today()))
     connection.commit()
 
 
 def aapb_generate(guid, extension):
-    """generates a file from AAPB given a guid and file type"""
+    """generates a file from AAPB given a guid and file type, for future use, currently NOT IN USE"""
     # TODO: needs to be updated with AAPB API
     root = Path(SEARCH_DIRECTORY)
     dir = root.joinpath(RESULT_DIRECTORY)
@@ -141,50 +164,21 @@ def aapb_generate(guid, extension):
     return filename
 
 
-@bp.route('/')
-def main():
-    return render_template('home.html')
-
-
-@bp.route('/search', methods=['GET', 'POST'])
-def search():
-    if request.method == 'POST':
-        files = request.form.getlist('file_type')
-        guid = request.form['GUID']
-        connection = get_db_connection()
-        paths = database_search(connection, guid, files)
-        if len(paths) == 0:
-            results = directory_search(guid)
-            if len(results) == 0:
-                connection.close()
-                return render_template('filenotfound.html', GUID=guid)
-            else:
-                for result in results:
-                    insert_into_db(connection, guid, result)
-                paths = database_search(connection, guid, files)
-                connection.commit()
-        connection.close()
-        return render_template('search_results.html', GUID=guid, paths=paths)
-    else:
-        return render_template('search.html')
-
-
 @bp.route('/searchapi', methods=['GET'])
 def search_api():
-    if 'file' in request.args:
-        file = [request.args['file']]
-    else:
-        file = []
+    file_type = [request.args['file']] if 'file' in request.args else []
     guid = request.args['guid']
     only_first = request.args.get('onlyfirst', False)
     connection = get_db_connection()
-    paths = database_search(connection, guid, file)
+    paths = database_search(connection, guid, file_type)
+    # TODO (marc @ 4/15/25): this looks like you do a full directory search each
+    # time you do not find results in the database, could be very inefficient
     if len(paths) == 0:
         results = directory_search(guid)
         if len(results) > 0:
             for result in results:
                 insert_into_db(connection, guid, result)
-            paths = database_search(connection, guid, file)
+            paths = database_search(connection, guid, file_type)
             connection.commit()
     connection.close()
     if len(paths) > 0:
@@ -196,21 +190,8 @@ def search_api():
         return 'The requested file does not exist in our server'
 
 
-@bp.route('/generate', methods=['GET', 'POST'])
-def add():
-    if request.method == 'POST':
-        extension = request.form['file_extension']
-        guid = request.form['GUID']
-        file = aapb_generate(guid, extension)
-        connection = get_db_connection()
-        insert_into_db(connection, guid, file)
-        return render_template('generate_results.html', GUID=guid, path=file)
-    else:
-        return render_template('generate.html')
-
-
 def create_app(build_db=BUILD_DB):
-    initialize(build_db)
+    initialize_database(build_db)
 
     app = Flask(__name__)
     app.config.from_prefixed_env()
