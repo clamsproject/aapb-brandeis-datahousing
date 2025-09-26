@@ -5,12 +5,15 @@ from datetime import date
 from pathlib import Path
 from string import Template
 
-from flask import Flask, request, Blueprint
+from flask import Flask, render_template, request, Blueprint, jsonify
+
 
 DATABASE = Path(__file__).parent / 'database.db'
 SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')
 RESULT_DIRECTORY = os.environ.get('DOWNLOAD_DIR')
 BUILD_DB = bool(int(os.environ.get('BUILD_DB')))
+STORAGE_DIRECTORY = os.environ.get('STORAGE_DIR')
+
 # Asset file types
 file_types = [
     ('text', ['.vtt', '.txt', '.srt', '.json']),
@@ -196,5 +199,10 @@ def create_app(build_db=BUILD_DB):
     app = Flask(__name__)
     app.config.from_prefixed_env()
     app.register_blueprint(bp)
+
+    from api.mmif_storage import bp as mmif_bp
+    # instead of using `url_prefix`, we use dedicated `API_PREFIX` vars in blueprints
+    # this will eliminate unnecessary redirection step (and forced use of `-L` flag in curl command)
+    app.register_blueprint(mmif_bp)
 
     return app

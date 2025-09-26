@@ -1,4 +1,6 @@
-flask==2.3.2
-gunicorn==20.1.0
-python-dotenv
+flask==2.*
+python-dotenv==1.*
 flask-dotenv
+gunicorn
+clams_python
+clams_utils
