@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 import pathlib
-load_dotenv(dotenv_path=pathlib.Path(__file__).parent/'.env.production', verbose=True)
+load_dotenv(dotenv_path=pathlib.Path(__file__).parent/'.env', verbose=True)
 
 import api
 # init db once here

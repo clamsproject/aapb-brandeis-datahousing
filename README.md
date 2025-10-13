@@ -2,7 +2,7 @@
 
 Codebase for the datahousing server deployed on Brandeis-LLC site as a part of [CLAMS Project](https://www.clams.ai). 
 
-At the moment, the server is used to resovle AAPB GUIDs to local file paths, and works with the accompanying client, [`mmif-docloc-baapb`](https://github.com/clamsproject/mmif-docloc-baapb) MMIF plugin.
+At the moment, the server is used to resolve AAPB GUIDs to local file paths, and works with the accompanying client, [`mmif-docloc-baapb`](https://github.com/clamsproject/mmif-docloc-baapb) MMIF plugin.
 
 
 ## Usage 
@@ -16,7 +16,7 @@ All `brandeis` tagged pre-built container images (available in https://github.co
 
 ### Server API
 
-There are API routes for (1) searching the assets (typically videos, audio streams and transcripts), (2) uploading MMIF files and (3) downloading MMIF files.
+There are API routes for (1) searching the assets (typically videos, audio streams and transcripts), (2) uploading MMIF files, (3) downloading MMIF files, and (4) retrieving MMIF storage analytics.
 
 
 **Searching assets**
@@ -27,7 +27,7 @@ To query available assets use the `searchapi` route with these three query strin
 * `file` — the type of the file to search for: one of `text`, `image`, `audio`, `video`, `markup` and `other`
 * `onlyfirst` — when used only the first match will be returned, default is false
 
-Examples (these use URLs as if you have deployed your own server (see below):
+Examples (these use URLs as if you have deployed your own server (see below)):
 
 ```
 curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h'
@@ -43,14 +43,14 @@ These return a message if no file was found, a list of server paths or a single 
 For this you use the `storeapi/upload` route:
 
 ```
-curl -X POST 127.0.0.1:8001/storeapi/upload -d @<some_mmif_fille>
-curl -X POST 127.0.0.1:8001/storeapi/upload?overwrite=True -d @<some_mmif_fille>
+curl -X POST 127.0.0.1:8001/storeapi/upload -d @<some_mmif_file>
+curl -X POST 127.0.0.1:8001/storeapi/upload?overwrite=True -d @<some_mmif_file>
 ```
 
 In the first case you get a warning if a file was already uploaded, in the second case existing files will be overwritten.
 
 
-**Downloading MMIF files.**
+**Downloading MMIF files**
 
 This uses the `storeapi/download` route. There are three modes. In the zero-guid mode you just hand in a pipeline specification and the server returns the server path and all files at that path:
 
@@ -85,7 +85,7 @@ curl -X POST 127.0.0.1:8001/storeapi/download
 }
 ```
 
-With a list of guids you get a dictionaray:
+With a list of guids you get a dictionary:
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download \
@@ -104,6 +104,64 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
   "cpb-aacip-690722078b2": {
   	...
   }
+```
+
+
+**MMIF storage analytics**
+
+To retrieve information on the status of data in the MMIF storage directory, use the `storeapi/status` route:
+
+```angular2html
+curl -X GET 127.0.0.1:8001/storeapi/status
+```
+
+This returns a dictionary with information on the full pipeline, e.g.:
+
+```json
+{
+  "dirty_pipeline_mmif_count": 0,
+  "non_terminal_mmif_count": 1,
+  "pipelines": [
+    {
+      "mmif_count": 1,
+      "path": "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe",
+      "spec": {
+        "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe": {
+          "pretty": "true",
+          "tfAllowOverlap": "false",
+          "tfLabelMap": "['I:chyron', 'Y:chyron', 'N:chyron']",
+          ...
+        }
+      }
+    },
+    {
+      "mmif_count": 1,
+      "path": "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe/tesseract/v2.0/e0ba0bab08a08fda1ed9f16d35bd21aa",
+      "spec": {
+        "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe": {
+          ...
+        },
+        "tesseract/v2.0/e0ba0bab08a08fda1ed9f16d35bd21aa": {
+          ...
+        }
+      }
+    },
+    {
+      "mmif_count": 1,
+      "path": "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe/doctr-wrapper/v1.4/e0ba0bab08a08fda1ed9f16d35bd21aa",
+      "spec": {
+        "doctr-wrapper/v1.4/e0ba0bab08a08fda1ed9f16d35bd21aa": {
+          ...
+        },
+        "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe": {
+          ...
+        }
+      }
+    }
+  ],
+  "total_mmif_files": 3,
+  "total_pipelines": 3
+}
 ```
 
 
