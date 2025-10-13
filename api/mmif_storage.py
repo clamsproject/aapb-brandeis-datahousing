@@ -1,9 +1,10 @@
 import hashlib
 import json
+import re
 import os
 from pathlib import Path
 
-from clams import mmif_utils
+from mmif import utils as mmif_utils
 from clams_utils.aapb import guidhandler
 from flask import request, jsonify, Blueprint
 from mmif import Mmif
@@ -59,7 +60,7 @@ def upload_mmif():
         # NOTE (marc @ 4/15/25): I had examples where the identifier was not 'd1' so I got 
         # rid of the hard-wired doc id with the hack below awaiting the merge above
         identifier = identifier_of_first_document(mmif)
-        guid = guidhandler.get_aapb_guid_from(mmif.get_document_by_id(identifier).location)
+        guid = guidhandler.get_aapb_guid_from(mmif[identifier].location)
         cur_root = Path(STORAGE_DIRECTORY)
         last_suffix = None
         mmif_fname = None
@@ -169,6 +170,8 @@ def parse_parameters(view):
     """
     try:
         param_dict = view.metadata.parameters
+        # param_dict = {k: v.replace("'", '\"') for k, v in param_dict.items()}
+        # print(param_dict)
         param_list = ['='.join(pair) for pair in param_dict.items()]
         param_list.sort()
         param_string = ','.join(param_list)
@@ -287,3 +290,52 @@ def rewind_time(pipeline, guid, num_views):
                     rewound = mmif_utils.rewind.rewind_mmif(mmif, len(mmif.views) - num_views)
                 return rewound.serialize()
     raise FileNotFoundError
+
+
+@bp.route(f"{API_PREFIX}/status", methods=["GET"])
+def storage_analytics():
+    """
+    Provide analytics and status information about the current MMIF storage system.
+    This method returns info on the total number of MMIF files, number of unique pipelines,
+    app parameters, non-terminal MMIFs, and dirty pipeline MMIFs.
+    """
+    # TODO (ledibr @ 10/12/25): consider adding params to show/hide certain parts e.g. full pipeline specs?
+    response = {"total_mmif_files": 0, "total_pipelines": 0, "pipelines": [],
+                "non_terminal_mmif_count": 0, "dirty_pipeline_mmif_count": 0}
+    app_specs = {}
+
+    for root, dirs, files in os.walk(STORAGE_DIRECTORY):
+        print("Root:", root)
+        print("dirs:", dirs)
+        print("files:", files)
+
+        curr_pipeline = root[root.index(STORAGE_DIRECTORY) + len(STORAGE_DIRECTORY) + 1:]
+
+        json_list = [f for f in files if re.search(r'\.json$', f)]
+        for subdir in dirs:
+            config = subdir + '.json'
+            if config in json_list:
+                curr_app = curr_pipeline[curr_pipeline.rfind('/', 0, curr_pipeline.rfind('/'))+1:]
+                full_path = os.path.join(curr_app, subdir)
+                with open(os.path.join(root, config), 'r') as f:
+                    app_specs[full_path] = json.load(f)
+        mmif_list = [f for f in files if re.search(r'\.mmif$', f)]
+        if mmif_list:
+            response["total_mmif_files"] += len(mmif_list)
+            response["total_pipelines"] += 1
+
+            pipeline_stats = {"path": curr_pipeline, "spec": {}, "mmif_count": len(mmif_list)}
+            segments = curr_pipeline.split("/")
+            curr_apps = ["/".join(segments[i:i + 3]) for i in range(0, len(segments), 3)]
+            for i, app in enumerate(curr_apps):
+                if app_specs.get(app):
+                    pipeline_stats["spec"][app] = app_specs[app]
+            response["pipelines"].append(pipeline_stats)
+
+            if re.search(r'-dirty', curr_pipeline):
+                response["dirty_pipeline_mmif_count"] += len(mmif_list)
+            if dirs:
+                response["non_terminal_mmif_count"] += len(mmif_list)
+    # TODO (ledibr @ 10/12/25): the response is essentially in reverse key order than we want, so I need to fix that.
+    # given how long these might get, do we want to potentially return this differently?
+    return jsonify(response)
