@@ -5,8 +5,10 @@ from datetime import date
 from pathlib import Path
 from string import Template
 
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, Blueprint, jsonify
 
+load_dotenv()
 
 DATABASE = Path(__file__).parent / 'database.db'
 SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')

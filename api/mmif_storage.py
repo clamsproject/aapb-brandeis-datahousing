@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 
-from clams import mmif_utils
+from mmif import utils
 from clams_utils.aapb import guidhandler
 from flask import request, jsonify, Blueprint
 from mmif import Mmif
@@ -284,6 +284,6 @@ def rewind_time(pipeline, guid, num_views):
                 with open(os.path.join(home, file), 'r') as f:
                     mmif = Mmif(f.read())
                     # we need to calculate the number of views to rewind
-                    rewound = mmif_utils.rewind.rewind_mmif(mmif, len(mmif.views) - num_views)
+                    rewound = utils.rewind.rewind_mmif(mmif, len(mmif.views) - num_views)
                 return rewound.serialize()
     raise FileNotFoundError
