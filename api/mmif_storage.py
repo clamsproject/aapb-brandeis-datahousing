@@ -309,7 +309,8 @@ def storage_analytics():
         print("dirs:", dirs)
         print("files:", files)
 
-        curr_pipeline = root[root.index(STORAGE_DIRECTORY) + len(STORAGE_DIRECTORY) + 1:]
+        curr_pipeline = root[root.index(STORAGE_DIRECTORY) + len(STORAGE_DIRECTORY):]
+        curr_pipeline = curr_pipeline.lstrip('/')
 
         json_list = [f for f in files if re.search(r'\.json$', f)]
         for subdir in dirs:
@@ -319,6 +320,8 @@ def storage_analytics():
                 full_path = os.path.join(curr_app, subdir)
                 with open(os.path.join(root, config), 'r') as f:
                     app_specs[full_path] = json.load(f)
+                if len(app_specs[full_path]) == 0:
+                    app_specs[full_path] = "No content in .json file."
         mmif_list = [f for f in files if re.search(r'\.mmif$', f)]
         if mmif_list:
             response["total_mmif_files"] += len(mmif_list)
@@ -336,6 +339,6 @@ def storage_analytics():
                 response["dirty_pipeline_mmif_count"] += len(mmif_list)
             if dirs:
                 response["non_terminal_mmif_count"] += len(mmif_list)
-    # TODO (ledibr @ 10/12/25): the response is essentially in reverse key order than we want, so I need to fix that.
+    # TODO (ledibr @ 10/27/25): the response seems to be in alphabetical key order, not chronological.
     # given how long these might get, do we want to potentially return this differently?
     return jsonify(response)
