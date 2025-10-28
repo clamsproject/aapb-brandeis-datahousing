@@ -6,7 +6,7 @@ from pathlib import Path
 
 from mmif import utils as mmif_utils
 from clams_utils.aapb import guidhandler
-from flask import request, jsonify, Blueprint
+from flask import request, jsonify, Blueprint, current_app
 from mmif import Mmif
 
 from api import STORAGE_DIRECTORY
@@ -305,9 +305,10 @@ def storage_analytics():
     app_specs = {}
 
     for root, dirs, files in os.walk(STORAGE_DIRECTORY):
-        print("Root:", root)
-        print("dirs:", dirs)
-        print("files:", files)
+        if current_app.config.get('DEBUG'):
+            print("Root:", root)
+            print("dirs:", dirs)
+            print("files:", files)
 
         curr_pipeline = root[root.index(STORAGE_DIRECTORY) + len(STORAGE_DIRECTORY):]
         curr_pipeline = curr_pipeline.lstrip('/')
@@ -321,7 +322,7 @@ def storage_analytics():
                 with open(os.path.join(root, config), 'r') as f:
                     app_specs[full_path] = json.load(f)
                 if len(app_specs[full_path]) == 0:
-                    app_specs[full_path] = "No content in .json file."
+                    app_specs[full_path] = {}
         mmif_list = [f for f in files if re.search(r'\.mmif$', f)]
         if mmif_list:
             response["total_mmif_files"] += len(mmif_list)
@@ -331,7 +332,7 @@ def storage_analytics():
             segments = curr_pipeline.split("/")
             curr_apps = ["/".join(segments[i:i + 3]) for i in range(0, len(segments), 3)]
             for i, app in enumerate(curr_apps):
-                if app_specs.get(app):
+                if app in app_specs:
                     pipeline_stats["spec"][app] = app_specs[app]
             response["pipelines"].append(pipeline_stats)
 
