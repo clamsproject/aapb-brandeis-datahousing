@@ -4,6 +4,6 @@ load_dotenv(dotenv_path=pathlib.Path(__file__).parent/'.env.production', verbose
 
 import api
 # init db once here
-api.initialize(True)
+api.initialize_database(True)
 # so that gunicorn workers do not init db again
 app = api.create_app(False)
