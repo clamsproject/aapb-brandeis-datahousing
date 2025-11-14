@@ -9,9 +9,16 @@ At the moment, the server is used to resolve AAPB GUIDs to local file paths, and
 
 ### Within CLAMS apps
 
-The server deployment address is stored as [a organization variable](https://github.com/organizations/clamsproject/settings/variables/actions). To use the server (and `baapb` scheme in MMIF document locations), set `BAAPB_RESOLVER_ADDRESS` environment variable to the deployment address, and install the client plugin. 
+To use the data server from within a CLAMS app and resolve `baapb://` scheme URIs in MMIF document locations:
 
-All `brandeis` tagged pre-built container images (available in https://github.com/orgs/clamsproject/packages) 
+1. **Install the client plugin**: Add [`mmif-docloc-baapb`](https://github.com/clamsproject/mmif-docloc-baapb) to your app's dependencies. The plugin will automatically register with `mmif-python` (requires `mmif-python` >= 1.0.2).
+
+2. **Set the resolver address**: Set the `BAAPB_RESOLVER_ADDRESS` environment variable to the deployment address of this data server (including the port number). For example:
+   ```bash
+   export BAAPB_RESOLVER_ADDRESS="hostname:port"
+   ```
+
+3. **Use in your app**: Once configured, the plugin will automatically resolve `baapb://` URIs to local file paths when processing MMIF documents. For more information on MMIF plugins, see the [MMIF Python SDK documentation](https://clams.ai/mmif-python/latest/plugins.html) 
 
 
 ### Server API
