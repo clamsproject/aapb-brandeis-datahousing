@@ -62,6 +62,41 @@ def batch_insert(connection, batch):
     connection.commit()
 
 
+def check_asset_dir():
+    """
+    Validates ASSET_DIR and warns if it's a symlink or contains symlinks.
+    Returns the resolved real path if ASSET_DIR is a symlink, otherwise returns the original path.
+    """
+    if not SEARCH_DIRECTORY:
+        raise RuntimeError("ASSET_DIR is not set in environment variables")
+    
+    sdir = Path(SEARCH_DIRECTORY)
+    if not sdir.exists():
+        raise RuntimeError(f"ASSET_DIR does not exist: {SEARCH_DIRECTORY}")
+    
+    if not sdir.is_dir():
+        raise RuntimeError(f"ASSET_DIR is not a directory: {SEARCH_DIRECTORY}")
+    
+    # Check if ASSET_DIR itself is a symlink
+    if sdir.is_symlink():
+        real_path = sdir.resolve()
+        print(f"WARNING: ASSET_DIR is a symlink: {SEARCH_DIRECTORY}")
+        print(f"WARNING: Resolved to real path: {real_path}")
+        print(f"WARNING: For proper functionality, consider using the real path in ASSET_DIR")
+        return real_path
+    
+    # Check if any parent directory is a symlink
+    for parent in sdir.parents:
+        if parent.is_symlink():
+            real_path = sdir.resolve()
+            print(f"WARNING: ASSET_DIR contains a symlinked parent directory: {parent}")
+            print(f"WARNING: Resolved ASSET_DIR to real path: {real_path}")
+            print(f"WARNING: For proper functionality, consider using the real path in ASSET_DIR")
+            return real_path
+    
+    return sdir
+
+
 def initialize_database(populate: bool = False):
     """
     Creates the database from the schema. If populate is True then an existing
@@ -74,7 +109,7 @@ def initialize_database(populate: bool = False):
             connection.executescript(f.read())
         files = []
         c = 1
-        sdir = Path(SEARCH_DIRECTORY)
+        sdir = check_asset_dir()
         # make sure the directory exists
         sdir.iterdir()
         time.sleep(1)
@@ -184,7 +219,7 @@ def search_api():
         else:
             return [path['server_path'] for path in paths]
     else:
-        return 'The requested file does not exist in our server'
+        return 'The requested file does not exist in our server', 404
 
 
 def create_app(build_db=BUILD_DB):
