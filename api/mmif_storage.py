@@ -8,6 +8,7 @@ from mmif import utils
 from clams_utils.aapb import guidhandler
 from flask import request, jsonify, Blueprint, current_app
 from mmif import Mmif
+from mmif.utils.cli.describe import generate_pipeline_identifier, split_appname_appversion
 
 from api import STORAGE_DIRECTORY
 
@@ -24,21 +25,6 @@ API_PREFIX = '/storeapi'
 
 class StorageServerError(Exception):
     pass
-
-
-def split_appname_appversion(long_app_id):
-    """
-    Helper method for splitting the app name and version number from a string. This
-    assumes the long identifier looks like "uri://APP_DOMAIN/APP_NAME/APP_VERSION"
-    """
-    app_path = Path(long_app_id).parts
-    app_name = app_path[2] if len(app_path) > 2 else None
-    app_version = app_path[3] if len(app_path) > 3 else None
-    if app_version is not None and app_name.endswith(app_version):
-        app_name = app_name[:-len(app_version) - 1]
-    if app_version == 'unresolvable':
-        app_version = None
-    return app_name, app_version
 
 
 def identifier_of_first_document(mmif_file: Mmif):
@@ -144,7 +130,7 @@ def download_mmif():
     data = json.loads(request.data.decode('utf-8'))
     # get both pipeline and guid from data
     # obtain pipeline using helper method
-    pipeline = pipeline_from_param_json(data)
+    pipeline = generate_pipeline_identifier(data)
     # get number of views for rewind if necessary
     num_views = len(data.get('pipeline', []))
     guid = data.get('guid')
@@ -170,9 +156,7 @@ def parse_parameters(view):
     """
     try:
         param_dict = view.metadata.parameters
-        # param_dict = {k: v.replace("'", '\"') for k, v in param_dict.items()}
-        # print(param_dict)
-        param_list = ['='.join(pair) for pair in param_dict.items()]
+        param_list = ['='.join([k, str(v)]) for k, v in param_dict.items()]
         param_list.sort()
         param_string = ','.join(param_list)
     except KeyError:
@@ -182,33 +166,6 @@ def parse_parameters(view):
     # NOTE: this is *not* for security purposes, so the usage of md5 is not an issue.
     param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
     return param_dict, param_hash
-
-
-# helper method for extracting pipeline
-def pipeline_from_param_json(param_json):
-    """
-    This method reads in a json containing the names of the pipelined apps and their
-    respective parameters, and then builds a path out of the pipelined apps and hashed
-    parameters.
-    """
-    pipeline = ""
-    for clams_app in param_json["pipeline"]:
-        # not using os path join until later for testing purposes
-        pipeline = pipeline + "/" + clams_app
-        # try to get param items
-        try:
-            param_list = ['='.join(pair) for pair in param_json["pipeline"][clams_app].items()]
-            param_list.sort()
-            param_string = ','.join(param_list)
-        # throws attribute error if empty (because empty means it's a set and not dict)
-        except AttributeError:
-            param_string = ""
-        # hash parameters
-        param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
-        pipeline = pipeline + "/" + param_hash
-    # removing first "/" so it doesn't mess with os.path.join later
-    pipeline = pipeline[1:]
-    return pipeline
 
 
 def zero_guid_download_response(pipeline: str):
