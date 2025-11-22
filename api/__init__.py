@@ -3,10 +3,9 @@ import sqlite3
 import time
 from datetime import date
 from pathlib import Path
-from string import Template
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, Blueprint, jsonify
+from flask import Flask, request, Blueprint
 
 load_dotenv()
 
@@ -59,9 +58,43 @@ def check_symlink(fpath):
 
 def batch_insert(connection, batch):
     """inserts a batch of files into the database"""
-    q = f"INSERT INTO map VALUES {batch};"
-    connection.execute(q)
+    connection.executemany("""INSERT INTO map VALUES (?, ?, ?, ?, ?);""", batch)
     connection.commit()
+
+
+def check_asset_dir():
+    """
+    Validates ASSET_DIR and warns if it's a symlink or contains symlinks.
+    Returns the resolved real path if ASSET_DIR is a symlink, otherwise returns the original path.
+    """
+    if not SEARCH_DIRECTORY:
+        raise RuntimeError("ASSET_DIR is not set in environment variables")
+    
+    sdir = Path(SEARCH_DIRECTORY)
+    if not sdir.exists():
+        raise RuntimeError(f"ASSET_DIR does not exist: {SEARCH_DIRECTORY}")
+    
+    if not sdir.is_dir():
+        raise RuntimeError(f"ASSET_DIR is not a directory: {SEARCH_DIRECTORY}")
+    
+    # Check if ASSET_DIR itself is a symlink
+    if sdir.is_symlink():
+        real_path = sdir.resolve()
+        print(f"WARNING: ASSET_DIR is a symlink: {SEARCH_DIRECTORY}")
+        print(f"WARNING: Resolved to real path: {real_path}")
+        print(f"WARNING: For proper functionality, consider using the real path in ASSET_DIR")
+        return real_path
+    
+    # Check if any parent directory is a symlink
+    for parent in sdir.parents:
+        if parent.is_symlink():
+            real_path = sdir.resolve()
+            print(f"WARNING: ASSET_DIR contains a symlinked parent directory: {parent}")
+            print(f"WARNING: Resolved ASSET_DIR to real path: {real_path}")
+            print(f"WARNING: For proper functionality, consider using the real path in ASSET_DIR")
+            return real_path
+    
+    return sdir
 
 
 def initialize_database(populate: bool = False):
@@ -75,10 +108,8 @@ def initialize_database(populate: bool = False):
         with open(Path(__file__).parent / 'schema_scratch.sql') as f:
             connection.executescript(f.read())
         files = []
-        file_template = Template(
-            """('${guid}', '${type}', '${path}', '${created}', '${accessed}')""")
-        c = 0
-        sdir = Path(SEARCH_DIRECTORY)
+        c = 1
+        sdir = check_asset_dir()
         # make sure the directory exists
         sdir.iterdir()
         time.sleep(1)
@@ -86,17 +117,15 @@ def initialize_database(populate: bool = False):
             if check_symlink(f):
                 continue
             if f.name.startswith('cpb') and '/.' not in str(f):
-                file = file_template.substitute(
-                    guid=shorten_guid(f.stem), type=file_typer(f), path=str(f),
-                    created=date.today(), accessed=date.today())
+                file = (f'{shorten_guid(f.stem)}', f'{file_typer(f)}', f'{str(f)}', f'{date.today()}', f'{date.today()}')
                 files.append(file)
                 if c % 1000 == 0:
-                    batch_insert(connection, ", ".join(files))
+                    batch_insert(connection, files)
                     files = []
                     print(c, f)
                 c += 1
         if len(files) > 0:
-            batch_insert(connection, ", ".join(files))
+            batch_insert(connection, files)
     else:
         with open(Path(__file__).parent / 'schema.sql') as f:
             connection.executescript(f.read())
@@ -129,20 +158,18 @@ def file_typer(path):
 def database_search(connection, guid, types):
     """searches the database for files"""
     guid = shorten_guid(guid)
-    # TODO: use 'WHERE file_type in (...)'
-    # TODO: use 'WHERE GUID like %?%'
     if len(types) == 1:
-        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID=? and file_type=? GROUP BY file_type, server_path;""", (guid, types[0])).fetchall()
-        connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID=? and file_type=?;""", (date.today(), guid, types[0]))
+        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE (GUID MATCH ?) AND (file_type MATCH ?) GROUP BY file_type, server_path;""", (f'"{guid}"', types[0])).fetchall()
+        connection.execute("""UPDATE map SET date_last_accessed=? WHERE (GUID MATCH ?) AND (file_type MATCH ?);""", (date.today(), f'"{guid}"', types[0]))
     elif len(types) == 2:
-        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID=? and file_type in (?, ?) GROUP BY file_type, server_path;""", (guid, types[0], types[1])).fetchall()
-        connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID=? and file_type in (?, ?);""", (date.today(), guid, types[0], types[1]))
+        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE (GUID MATCH ?) AND (file_type IN (?, ?)) GROUP BY file_type, server_path;""", (f'"{guid}"', types[0], types[1])).fetchall()
+        connection.execute("""UPDATE map SET date_last_accessed=? WHERE (GUID MATCH ?) AND (file_type IN (?, ?));""", (date.today(), f'"{guid}"', types[0], types[1]))
     elif len(types) == 3:
-        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID=? and file_type in (?, ?, ?) GROUP BY file_type, server_path;""", (guid, types[0], types[1], types[2])).fetchall()
-        connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID=? and file_type in (?, ?, ?);""", (date.today(), guid, types[0], types[1], types[2]))
+        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE (GUID MATCH ?) AND (file_type IN (?, ?, ?)) GROUP BY file_type, server_path;""", (f'"{guid}"', types[0], types[1], types[2])).fetchall()
+        connection.execute("""UPDATE map SET date_last_accessed=? WHERE (GUID MATCH ?) AND (file_type IN (?, ?, ?));""", (date.today(), f'"{guid}"', types[0], types[1], types[2]))
     else:
-        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID=? GROUP BY file_type, server_path;""", (guid,)).fetchall()
-        connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID=?;""", (date.today(), guid))
+        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID MATCH ? GROUP BY file_type, server_path;""", (f'"{guid}"',)).fetchall()
+        connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID MATCH ?;""", (date.today(), f'"{guid}"'))
     connection.commit()
     return paths
 
@@ -171,7 +198,7 @@ def aapb_generate(guid, extension):
 
 @bp.route('/searchapi', methods=['GET'])
 def search_api():
-    file_type = [request.args['file']] if 'file' in request.args else []
+    file_type = request.args.getlist('file') if 'file' in request.args else []
     guid = request.args['guid']
     only_first = request.args.get('onlyfirst', False)
     connection = get_db_connection()
@@ -192,7 +219,7 @@ def search_api():
         else:
             return [path['server_path'] for path in paths]
     else:
-        return 'The requested file does not exist in our server'
+        return 'The requested file does not exist in our server', 404
 
 
 def create_app(build_db=BUILD_DB):
