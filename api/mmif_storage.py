@@ -2,11 +2,15 @@ import hashlib
 import json
 import re
 import os
+import io
+import logging
+import zipfile as zf
 from pathlib import Path
+from zipfile import ZIP_DEFLATED
 
 from mmif import utils
 from clams_utils.aapb import guidhandler
-from flask import request, jsonify, Blueprint, current_app
+from flask import request, jsonify, Blueprint, current_app, send_file
 from mmif import Mmif
 
 from api import STORAGE_DIRECTORY
@@ -238,15 +242,21 @@ def multi_guid_download_response(pipeline: str, guids: list, num_views: int):
     When retrieving multiple MMIFs for a pipeline, we construct a json object to
     store each guid as a key and each MMIF as the value.
     """
-    mmifs_by_guid = dict()
-    for guid in guids:
-        response = single_guid_download_response(pipeline, guid, num_views)
-        try:
-            mmif = get_mmif_for_guid(pipeline, guid, num_views)
-            mmifs_by_guid[guid] = mmif
-        except StorageServerError as e:
-            mmifs_by_guid[guid] = {"error": str(e)}
-    return mmifs_by_guid
+    # mmifs_by_guid = dict()
+    mem_file = io.BytesIO()
+    with zf.ZipFile(mem_file, 'w', ZIP_DEFLATED) as mmif_zip:
+        for guid in guids:
+            try:
+                # mmif = get_mmif_for_guid(pipeline, guid, num_views)
+                guid = guid + ".mmif"
+                path = os.path.join(pipeline, guid)
+                mmif_zip.write(filename=path, arcname=guid)
+            except StorageServerError as e:
+                pass
+            #     mmifs_by_guid[guid] = {"error": str(e)}
+    mem_file.seek(0)
+    # user will need to add '--output <FILE>' arg to curl request
+    return send_file(mem_file, mimetype='zip', as_attachment=True, download_name='test_zip.zip')
 
 
 def get_mmif_for_guid(pipeline: str, guid: str, num_views: int):
