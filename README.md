@@ -54,7 +54,7 @@ In the first case you get a warning if a file was already uploaded, in the secon
 
 **Downloading MMIF files**
 
-This uses the `storeapi/download` route. There are three modes. In the zero-guid mode you just hand in a pipeline specification and the server returns the server path and all files at that path:
+This uses the `storeapi/download` route. There are three modes. In the zero-GUID mode you just hand in a pipeline specification and the server returns the server path and all files at that path:
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download \
@@ -70,7 +70,7 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
 }
 ```
 
-If you add a guid then the server will return a MMIF file or a warning if the file did not exist:
+If you add a GUID, then the server will return a MMIF file or a warning if the file did not exist:
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download
@@ -87,25 +87,25 @@ curl -X POST 127.0.0.1:8001/storeapi/download
 }
 ```
 
-With a list of guids you get a dictionary:
+With a list of GUIDs, the server will return a ZIP file. The `--output` ZIP file name must be specified in the request
+to the server. If any given GUIDs are not found, they will be listed in an `ERROR_LOG.json` file in the returned ZIP file.
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download \
-    -H 'Content-Type: "application/json"' \
+    -H 'Content-Type: "application/zip"' \
     -d '
     {
-        "pipeline": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },
-        "guid": ["cpb-aacip-690722078b2", "NO-SUCH-GUID"]
-    }'
+        "pipeline": { "whisper-wrapper/v3": {"modelSize": "tiny"} },
+        "guid": ["cpb-aacip-507-154dn40c26", "cpb-aacip-507-v40js9j432", "NO-SUCH-GUID"]
+    }' \
+    --output mmif_zip.zip
 ```
 ```json
 {
   "NO-SUCH-GUID": {
-    "error": "Did not find: NONE"
-  },
-  "cpb-aacip-690722078b2": {
-  	...
+    "Error": "Did not find NO-SUCH-GUID"
   }
+}
 ```
 
 

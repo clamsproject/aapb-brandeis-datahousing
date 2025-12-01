@@ -242,18 +242,20 @@ def multi_guid_download_response(pipeline: str, guids: list, num_views: int):
     When retrieving multiple MMIFs for a pipeline, we construct a json object to
     store each guid as a key and each MMIF as the value.
     """
-    # mmifs_by_guid = dict()
+    errors = dict()
     mem_file = io.BytesIO()
     with zf.ZipFile(mem_file, 'w', ZIP_DEFLATED) as mmif_zip:
         for guid in guids:
             try:
                 # mmif = get_mmif_for_guid(pipeline, guid, num_views)
-                guid = guid + ".mmif"
-                path = os.path.join(pipeline, guid)
-                mmif_zip.write(filename=path, arcname=guid)
-            except StorageServerError as e:
-                pass
-            #     mmifs_by_guid[guid] = {"error": str(e)}
+                mmif_name = guid + ".mmif" # instead of using get_mmif_for_guid and needing to re-dump mmif
+                path = os.path.join(pipeline, mmif_name)
+                mmif_zip.write(filename=path, arcname=mmif_name)
+            except FileNotFoundError:
+                errors[guid] = {"Error": f"Did not find {guid}"}
+        if errors:
+            error_dump = json.dumps(errors, indent=2)
+            mmif_zip.writestr(zinfo_or_arcname="ERROR_LOG.json", data=error_dump)
     mem_file.seek(0)
     # user will need to add '--output <FILE>' arg to curl request
     return send_file(mem_file, mimetype='zip', as_attachment=True, download_name='test_zip.zip')
