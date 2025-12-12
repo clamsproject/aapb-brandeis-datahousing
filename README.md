@@ -87,8 +87,7 @@ curl -X POST 127.0.0.1:8001/storeapi/download
 }
 ```
 
-With a list of GUIDs, the server will return a ZIP file. The `--output` ZIP file name must be specified in the request
-to the server. If any given GUIDs are not found, they will be listed in an `ERROR_LOG.json` file in the returned ZIP file.
+With a list of GUIDs, the server will return a ZIP file. The `--output` ZIP file name must be specified in the request to the server.
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download \
@@ -100,13 +99,8 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
     }' \
     --output mmif_zip.zip
 ```
-```json
-{
-  "NO-SUCH-GUID": {
-    "Error": "Did not find NO-SUCH-GUID"
-  }
-}
-```
+
+The zipfile returned has the MMIF files for each GUID, in addition it has an error log with notifications on which files could not be retrieved and a file with the pipeline path from the server.
 
 
 **MMIF storage analytics**

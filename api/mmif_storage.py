@@ -248,17 +248,23 @@ def multi_guid_download_response(pipeline: str, guids: list, num_views: int):
         for guid in guids:
             try:
                 # mmif = get_mmif_for_guid(pipeline, guid, num_views)
-                mmif_name = guid + ".mmif" # instead of using get_mmif_for_guid and needing to re-dump mmif
+                # instead of using get_mmif_for_guid and needing to re-dump mmif
+                mmif_name = guid + ".mmif"
                 path = os.path.join(pipeline, mmif_name)
-                mmif_zip.write(filename=path, arcname=mmif_name)
+                mmif_zip.write(filename=path, arcname=f'multi-guid-response/files/{mmif_name}')
             except FileNotFoundError:
                 errors[guid] = {"Error": f"Did not find {guid}"}
-        if errors:
-            error_dump = json.dumps(errors, indent=2)
-            mmif_zip.writestr(zinfo_or_arcname="ERROR_LOG.json", data=error_dump)
+        mmif_zip.writestr(zinfo_or_arcname="multi-guid-response/pipeline_path.txt", data=pipeline)
+        error_dump = json.dumps(errors, indent=2)
+        mmif_zip.writestr(zinfo_or_arcname="multi-guid-response/errors.json", data=error_dump)
     mem_file.seek(0)
-    # user will need to add '--output <FILE>' arg to curl request
-    return send_file(mem_file, mimetype='zip', as_attachment=True, download_name='test_zip.zip')
+    # User will need to add '--output <FILE>' arg to curl request
+    # NOTE (mv 12/12/25), the --output is needed even with the use of download_name
+    # below. In fact, it still works for me withoutremove that parameter, but keeping
+    # it anyway.
+    return send_file(
+        mem_file, mimetype='zip', as_attachment=True,
+        download_name='multi-guid-response.zip')
 
 
 def get_mmif_for_guid(pipeline: str, guid: str, num_views: int):
