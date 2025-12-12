@@ -2,11 +2,15 @@ import hashlib
 import json
 import re
 import os
+import io
+import logging
+import zipfile as zf
 from pathlib import Path
+from zipfile import ZIP_DEFLATED
 
 from mmif import utils
 from clams_utils.aapb import guidhandler
-from flask import request, jsonify, Blueprint, current_app
+from flask import request, jsonify, Blueprint, current_app, send_file
 from mmif import Mmif
 
 from api import STORAGE_DIRECTORY
@@ -238,15 +242,29 @@ def multi_guid_download_response(pipeline: str, guids: list, num_views: int):
     When retrieving multiple MMIFs for a pipeline, we construct a json object to
     store each guid as a key and each MMIF as the value.
     """
-    mmifs_by_guid = dict()
-    for guid in guids:
-        response = single_guid_download_response(pipeline, guid, num_views)
-        try:
-            mmif = get_mmif_for_guid(pipeline, guid, num_views)
-            mmifs_by_guid[guid] = mmif
-        except StorageServerError as e:
-            mmifs_by_guid[guid] = {"error": str(e)}
-    return mmifs_by_guid
+    errors = dict()
+    mem_file = io.BytesIO()
+    with zf.ZipFile(mem_file, 'w', ZIP_DEFLATED) as mmif_zip:
+        for guid in guids:
+            try:
+                # mmif = get_mmif_for_guid(pipeline, guid, num_views)
+                # instead of using get_mmif_for_guid and needing to re-dump mmif
+                mmif_name = guid + ".mmif"
+                path = os.path.join(pipeline, mmif_name)
+                mmif_zip.write(filename=path, arcname=f'multi-guid-response/files/{mmif_name}')
+            except FileNotFoundError:
+                errors[guid] = {"Error": f"Did not find {guid}"}
+        mmif_zip.writestr(zinfo_or_arcname="multi-guid-response/pipeline_path.txt", data=pipeline)
+        error_dump = json.dumps(errors, indent=2)
+        mmif_zip.writestr(zinfo_or_arcname="multi-guid-response/errors.json", data=error_dump)
+    mem_file.seek(0)
+    # User will need to add '--output <FILE>' arg to curl request
+    # NOTE (mv 12/12/25), the --output is needed even with the use of download_name
+    # below. In fact, it still works for me withoutremove that parameter, but keeping
+    # it anyway.
+    return send_file(
+        mem_file, mimetype='zip', as_attachment=True,
+        download_name='multi-guid-response.zip')
 
 
 def get_mmif_for_guid(pipeline: str, guid: str, num_views: int):
