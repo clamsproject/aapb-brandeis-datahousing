@@ -7,13 +7,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 from flask import Flask, request, Blueprint
 
+
 load_dotenv()
 
 DATABASE = Path(__file__).parent / 'database.db'
-SEARCH_DIRECTORY = os.environ.get('ASSET_DIR')
-RESULT_DIRECTORY = os.environ.get('DOWNLOAD_DIR')
+ASSET_DIR = os.environ.get('ASSET_DIR')
+DOWNLOAD_DIR = os.environ.get('DOWNLOAD_DIR')
+STORAGE_DIR = os.environ.get('STORAGE_DIR')
 BUILD_DB = bool(int(os.environ.get('BUILD_DB')))
-STORAGE_DIRECTORY = os.environ.get('STORAGE_DIR')
+
 
 # Asset file types
 file_types = [
@@ -29,14 +31,6 @@ for file_type, extensions in file_types:
         file_types_idx[extension] = file_type
 
 bp = Blueprint('app', __name__, template_folder='templates')
-
-
-def print_settings():
-    """Debugging method."""
-    print(f'>>   DATABASE           =  {DATABASE}')
-    print(f'>>   SEARCH_DIRECTORY   =  {SEARCH_DIRECTORY}')
-    print(f'>>   RESULT_DIRECTORY   =  {RESULT_DIRECTORY}')
-    print(f'>>   BUILD_DB           =  {BUILD_DB}')
 
 
 def shorten_guid(guid):
@@ -67,20 +61,20 @@ def check_asset_dir():
     Validates ASSET_DIR and warns if it's a symlink or contains symlinks.
     Returns the resolved real path if ASSET_DIR is a symlink, otherwise returns the original path.
     """
-    if not SEARCH_DIRECTORY:
+    if not ASSET_DIR:
         raise RuntimeError("ASSET_DIR is not set in environment variables")
     
-    sdir = Path(SEARCH_DIRECTORY)
+    sdir = Path(ASSET_DIR)
     if not sdir.exists():
-        raise RuntimeError(f"ASSET_DIR does not exist: {SEARCH_DIRECTORY}")
+        raise RuntimeError(f"ASSET_DIR does not exist: {ASSET_DIR}")
     
     if not sdir.is_dir():
-        raise RuntimeError(f"ASSET_DIR is not a directory: {SEARCH_DIRECTORY}")
+        raise RuntimeError(f"ASSET_DIR is not a directory: {ASSET_DIR}")
     
     # Check if ASSET_DIR itself is a symlink
     if sdir.is_symlink():
         real_path = sdir.resolve()
-        print(f"WARNING: ASSET_DIR is a symlink: {SEARCH_DIRECTORY}")
+        print(f"WARNING: ASSET_DIR is a symlink: {ASSET_DIR}")
         print(f"WARNING: Resolved to real path: {real_path}")
         print(f"WARNING: For proper functionality, consider using the real path in ASSET_DIR")
         return real_path
@@ -122,7 +116,7 @@ def initialize_database(populate: bool = False):
                 if c % 1000 == 0:
                     batch_insert(connection, files)
                     files = []
-                    print(c, f)
+                    print(f'{c} paths loaded'   )
                 c += 1
         if len(files) > 0:
             batch_insert(connection, files)
@@ -139,10 +133,10 @@ def get_db_connection():
 
 
 def directory_search(guid):
-    """returns the locations of all files in the SEARCH_DIRECTORY that begin with the
+    """returns the locations of all files in the ASSET_DIR that begin with the
     given guid"""
     paths = []
-    for file in Path(SEARCH_DIRECTORY).glob("**/*"):
+    for file in Path(ASSET_DIR).glob("**/*"):
         if check_symlink(file):
             continue
         if guid in file.stem:
@@ -158,20 +152,20 @@ def file_typer(path):
 def database_search(connection, guid, types):
     """searches the database for files"""
     guid = shorten_guid(guid)
-    if len(types) == 1:
-        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE (GUID MATCH ?) AND (file_type MATCH ?) GROUP BY file_type, server_path;""", (f'"{guid}"', types[0])).fetchall()
-        connection.execute("""UPDATE map SET date_last_accessed=? WHERE (GUID MATCH ?) AND (file_type MATCH ?);""", (date.today(), f'"{guid}"', types[0]))
-    elif len(types) == 2:
-        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE (GUID MATCH ?) AND (file_type IN (?, ?)) GROUP BY file_type, server_path;""", (f'"{guid}"', types[0], types[1])).fetchall()
-        connection.execute("""UPDATE map SET date_last_accessed=? WHERE (GUID MATCH ?) AND (file_type IN (?, ?));""", (date.today(), f'"{guid}"', types[0], types[1]))
-    elif len(types) == 3:
-        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE (GUID MATCH ?) AND (file_type IN (?, ?, ?)) GROUP BY file_type, server_path;""", (f'"{guid}"', types[0], types[1], types[2])).fetchall()
-        connection.execute("""UPDATE map SET date_last_accessed=? WHERE (GUID MATCH ?) AND (file_type IN (?, ?, ?));""", (date.today(), f'"{guid}"', types[0], types[1], types[2]))
+    if types:
+        type_clause = f'file_type IN ({",".join(["?"] * len(types))})'
+        query = f"SELECT file_type, server_path FROM map WHERE (GUID MATCH ?) AND {type_clause};"
+        print(query)
+        #paths = connection.execute(query, (guid,) + tuple(types)).fetchall()
+        paths = connection.execute(query, (f'"{guid}"',) + tuple(types)).fetchall()
     else:
-        paths = connection.execute("""SELECT file_type, server_path FROM map WHERE GUID MATCH ? GROUP BY file_type, server_path;""", (f'"{guid}"',)).fetchall()
-        connection.execute("""UPDATE map SET date_last_accessed=? WHERE GUID MATCH ?;""", (date.today(), f'"{guid}"'))
+        query = "SELECT file_type, server_path FROM map WHERE GUID MATCH ?;"
+        paths = connection.execute(query, (f'"{guid}"',)).fetchall()
+        connection.execute(
+            """UPDATE map SET date_last_accessed=? WHERE GUID MATCH ?;""",
+            (date.today(), f'"{guid}"'))
     connection.commit()
-    return paths
+    return [p['server_path'] for p in paths]
 
 
 def insert_into_db(connection, guid, result):
@@ -187,8 +181,8 @@ def insert_into_db(connection, guid, result):
 def aapb_generate(guid, extension):
     """generates a file from AAPB given a guid and file type, for future use, currently NOT IN USE"""
     # TODO: needs to be updated with AAPB API
-    root = Path(SEARCH_DIRECTORY)
-    dir = root.joinpath(RESULT_DIRECTORY)
+    root = Path(ASSET_DIR)
+    dir = root.joinpath(DOWNLOAD_DIR)
     if not dir.is_dir():
         dir.mkdir()
     filename = dir.joinpath(guid + extension)
@@ -203,35 +197,32 @@ def search_api():
     only_first = request.args.get('onlyfirst', False)
     connection = get_db_connection()
     paths = database_search(connection, guid, file_type)
-    # TODO (marc @ 4/15/25): this looks like you do a full directory search each
-    # time you do not find results in the database, could be very inefficient
+    # TODO (marc @ 12/12/25): doing a full directory search each time you do not find
+    # results in the database, this is not horribly time consuming at the moment (on my
+    # desktop it takes about two seconds when you have 16K files), but this needs to be
+    # revisited when the number of assets gets much higher.
     if len(paths) == 0:
-        results = directory_search(guid)
-        if len(results) > 0:
-            for result in results:
-                insert_into_db(connection, guid, result)
-            paths = database_search(connection, guid, file_type)
-            connection.commit()
+        # making sure the paths are strings, to match the paths from the database search
+        paths = [str(p) for p in directory_search(guid)]
+        #if len(results) > 0:
+        #    for result in results:
+        #        insert_into_db(connection, guid, result)
+        #    paths = database_search(connection, guid, file_type)
     connection.close()
     if len(paths) > 0:
-        if only_first:
-            return paths[0]['server_path']
-        else:
-            return [path['server_path'] for path in paths]
+        return paths[0] if only_first else paths
     else:
         return 'The requested file does not exist in our server', 404
 
 
 def create_app(build_db=BUILD_DB):
     initialize_database(build_db)
-
     app = Flask(__name__)
     app.config.from_prefixed_env()
     app.register_blueprint(bp)
-
+    # Instead of using `url_prefix`, we use dedicated `API_PREFIX` vars in blueprints
+    # this will eliminate unnecessary redirection step (and forced use of `-L` flag in
+    # in curl). The import is not at the top of the file to avoid import errors.
     from api.mmif_storage import bp as mmif_bp
-    # instead of using `url_prefix`, we use dedicated `API_PREFIX` vars in blueprints
-    # this will eliminate unnecessary redirection step (and forced use of `-L` flag in curl command)
     app.register_blueprint(mmif_bp)
-
     return app

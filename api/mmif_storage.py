@@ -13,7 +13,7 @@ from clams_utils.aapb import guidhandler
 from flask import request, jsonify, Blueprint, current_app, send_file
 from mmif import Mmif
 
-from api import STORAGE_DIRECTORY
+from api import STORAGE_DIR
 
 
 # make blueprint of app to be used in __init__.py
@@ -65,7 +65,7 @@ def upload_mmif():
         # rid of the hard-wired doc id with the hack below awaiting the merge above
         identifier = identifier_of_first_document(mmif)
         guid = guidhandler.get_aapb_guid_from(mmif[identifier].location)
-        cur_root = Path(STORAGE_DIRECTORY)
+        cur_root = Path(STORAGE_DIR)
         last_suffix = None
         mmif_fname = None
         for view in mmif.views:
@@ -322,13 +322,13 @@ def storage_analytics():
                 "non_terminal_mmif_count": 0, "dirty_pipeline_mmif_count": 0}
     app_specs = {}
 
-    for root, dirs, files in os.walk(STORAGE_DIRECTORY):
+    for root, dirs, files in os.walk(STORAGE_DIR):
         if current_app.config.get('DEBUG'):
             print("Root:", root)
             print("dirs:", dirs)
             print("files:", files)
 
-        curr_pipeline = root[root.index(STORAGE_DIRECTORY) + len(STORAGE_DIRECTORY):]
+        curr_pipeline = root[root.index(STORAGE_DIR) + len(STORAGE_DIR):]
         curr_pipeline = curr_pipeline.lstrip('/')
 
         json_list = [f for f in files if re.search(r'\.json$', f)]

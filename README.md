@@ -23,8 +23,8 @@ There are API routes for (1) searching the assets (typically videos, audio strea
 
 To query available assets use the `searchapi` route with these three query string parameters:
 
-* `guid` (required) — part of the AAPB GUID to search for (min. 3 characters)
-* `file` — the type of the file to search for: up to three of `text`, `image`, `audio`, `video`, `markup` and `other`
+* `guid` — part of the AAPB GUID to search for (min. 3 characters), required parameter
+* `file` — the type of the file to search for: any number of `text`, `image`, `audio`, `video`, `markup` and `other`, default is to search for all types
 * `onlyfirst` — when used only the first match will be returned, default is false
 
 Examples (these use URLs as if you have deployed your own server (see below)):
@@ -37,7 +37,7 @@ curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video&file=other'
 curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&onlyfirst=true'
 ```
 
-These return a message if no file was found, a list of server paths or a single path (if onlyfirst was used).
+These return a message if no file was found, a list of server paths or a single path (if onlyfirst was used). Note that searches for short strings that occur in many GUIDs may take a few seconds.
 
 
 **Uploading MMIF files**
