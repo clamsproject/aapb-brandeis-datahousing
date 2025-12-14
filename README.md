@@ -23,15 +23,17 @@ There are API routes for (1) searching the assets (typically videos, audio strea
 
 To query available assets use the `searchapi` route with these three query string parameters:
 
-* `guid` (required) — the AAPB GUID to search for (either `cpb-aacip-xxx-yyyyyyyyyy` or simply `xxx-yyyyyyyyyy` )
-* `file` — the type of the file to search for: one of `text`, `image`, `audio`, `video`, `markup` and `other`
+* `guid` (required) — part of the AAPB GUID to search for (min. 3 characters)
+* `file` — the type of the file to search for: up to three of `text`, `image`, `audio`, `video`, `markup` and `other`
 * `onlyfirst` — when used only the first match will be returned, default is false
 
 Examples (these use URLs as if you have deployed your own server (see below)):
 
 ```
+curl '127.0.0.1:8001/searchapi?guid=zw18'
 curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h'
 curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video'
+curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video&file=other'
 curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&onlyfirst=true'
 ```
 
@@ -52,7 +54,7 @@ In the first case you get a warning if a file was already uploaded, in the secon
 
 **Downloading MMIF files**
 
-This uses the `storeapi/download` route. There are three modes. In the zero-guid mode you just hand in a pipeline specification and the server returns the server path and all files at that path:
+This uses the `storeapi/download` route. There are three modes. In the zero-GUID mode you just hand in a pipeline specification and the server returns the server path and all files at that path:
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download \
@@ -68,7 +70,7 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
 }
 ```
 
-If you add a guid then the server will return a MMIF file or a warning if the file did not exist:
+If you add a GUID, then the server will return a MMIF file or a warning if the file did not exist:
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download
@@ -85,26 +87,20 @@ curl -X POST 127.0.0.1:8001/storeapi/download
 }
 ```
 
-With a list of guids you get a dictionary:
+With a list of GUIDs, the server will return a ZIP file. The `--output` ZIP file name must be specified in the request to the server.
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download \
-    -H 'Content-Type: "application/json"' \
+    -H 'Content-Type: "application/zip"' \
     -d '
     {
-        "pipeline": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },
-        "guid": ["cpb-aacip-690722078b2", "NO-SUCH-GUID"]
-    }'
+        "pipeline": { "whisper-wrapper/v3": {"modelSize": "tiny"} },
+        "guid": ["cpb-aacip-507-154dn40c26", "cpb-aacip-507-v40js9j432", "NO-SUCH-GUID"]
+    }' \
+    --output mmif_zip.zip
 ```
-```json
-{
-  "NO-SUCH-GUID": {
-    "error": "Did not find: NONE"
-  },
-  "cpb-aacip-690722078b2": {
-  	...
-  }
-```
+
+The zipfile returned has the MMIF files for each GUID, in addition it has an error log with notifications on which files could not be retrieved and a file with the pipeline path from the server.
 
 
 **MMIF storage analytics**
