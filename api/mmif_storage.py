@@ -1,17 +1,20 @@
 import hashlib
 import json
-import re
 import os
+import re
+from collections import Counter
 from pathlib import Path
+from typing import List, Dict, Tuple
 
-from mmif import utils
 from clams_utils.aapb import guidhandler
 from flask import request, jsonify, Blueprint, current_app
 from mmif import Mmif
-from mmif.utils.cli.describe import generate_pipeline_identifier, split_appname_appversion
+from mmif import utils
+from mmif.utils.workflow_helper import _split_appname_appversion
+from mmif.utils.workflow_helper import generate_param_hash
+from mmif.utils.workflow_helper import group_views_by_app
 
 from api import STORAGE_DIRECTORY
-
 
 # make blueprint of app to be used in __init__.py
 bp = Blueprint(__file__.split(os.sep)[-1].split('.')[0].replace('_', '-'), __name__)
@@ -34,6 +37,52 @@ def identifier_of_first_document(mmif_file: Mmif):
     return None
 
 
+def generate_workflow_identifier(data: Mmif) -> Tuple[str, List[Dict]]:
+    """
+    Mostly copied from mmif.utils.workflow_helper.generate_workflow_identifier version 1.2.1
+    with addition of getting the raw parameter dicts.
+    TODO In the future when mmif.utils.workflow_helper.generate_workflow_identifier supports returning
+    parameter dicts, we can switch to that.
+    """
+    segments = []
+    # First prefix is source information, sorted by document type
+    sources = Counter(doc.at_type.shortname for doc in data.documents)
+    segments.append('-'.join([f'{k}-{sources[k]}' for k in sorted(sources.keys())]))
+
+    # Group views into runs
+    grouped_apps = group_views_by_app(data.views)
+
+    param_dicts = []
+    for app_execution in grouped_apps:
+        # Use the first view in the run as representative for metadata
+        first_view = app_execution[0]
+
+        # Skip runs where the representative view has errors or warnings
+        if first_view.has_error() or first_view.has_warnings():
+            continue
+
+        app = first_view.metadata.get("app")
+        if app is None:
+            continue
+        app_name, app_version = _split_appname_appversion(app)
+
+        # Use raw parameters from the first view for reproducibility
+        try:
+            param_dict = first_view.metadata.parameters
+        except (KeyError, AttributeError):
+            param_dict = {}
+        param_dicts.append(param_dict)
+
+        param_hash = generate_param_hash(param_dict)
+
+        # Build segment: app_name/version/hash
+        name_str = app_name if app_name else "unknown"
+        version_str = app_version if app_version else "unversioned"
+        segments.append(f"{name_str}/{version_str}/{param_hash}")
+
+    return '/'.join(segments), param_dicts
+
+
 @bp.post(f"{API_PREFIX}/upload")
 def upload_mmif():
     try:
@@ -41,32 +90,32 @@ def upload_mmif():
         overwrite = request.args.get('overwrite')
         overwrite = True if overwrite in ('1', 't', 'true', 'True') else False
         mmif = Mmif(body)
-        # TODO (krim @ 3/21/25): hardcoding of document id might be a bad idea,
-        # fix this after https://github.com/clamsproject/mmif-python/pull/304 is merged
-        # NOTE (marc @ 4/15/25): I had examples where the identifier was not 'd1' so I got 
-        # rid of the hard-wired doc id with the hack below awaiting the merge above
-        identifier = identifier_of_first_document(mmif)
-        guid = guidhandler.get_aapb_guid_from(mmif[identifier].location)
+        # Assuming the first document is the "main" one that has the AAPB GUID
+        doc_id = identifier_of_first_document(mmif)
+        if doc_id is None:
+            return upload_error_response(ValueError("No document with identifier found in MMIF"))
+        guid = guidhandler.get_aapb_guid_from(mmif[doc_id].location)
         cur_root = Path(STORAGE_DIRECTORY)
-        last_suffix = None
+
+        wfid, param_dicts = generate_workflow_identifier(mmif)
+        # wf_id syntax is source_info/app1name/app1version/app1paramhash/app2name/...
+        # need to pull appname/appversion from the id and find corresponding views to extract params from view metadata
+        segments = wfid.split('/')
+        # start from the first "source info" segment
+        cur_root = cur_root / Path(segments[0])
+        segments = segments[1:]
+        # make sure segments is multiple of 3
+        if len(segments) % 3 != 0:
+            return upload_error_response(ValueError("Malformed workflow identifier"))
         mmif_fname = None
-        for view in mmif.views:
-            if not view.annotations and view.metadata.warnings:
-                # skip "warning" views
-                continue
-            param_dict, param_hash = parse_parameters(view)
-            appn, appv = split_appname_appversion(view.metadata.app)
-            if appv is None:
-                return upload_no_version_response(appn)
-            # TODO (krim @ 3/21/25): we might want "sanitize" appn and appv to make sure
-            # they are valid directory names
-            cur_suffix = Path(appn) / appv / param_hash
-            if cur_suffix != last_suffix:
-                cur_root = cur_root / cur_suffix
-                last_suffix = cur_suffix
+        for i in range(0, len(segments), 3):
+            appn = segments[i]
+            appv = segments[i + 1]
+            param_hash = segments[i + 2]
+            cur_root = cur_root / Path(appn) / appv / param_hash
             cur_root.mkdir(parents=True, exist_ok=True)
-            with open(cur_root.parent / f'{param_hash}.json', 'w') as f:
-                json.dump(param_dict, f, indent=2)
+            with open(cur_root.with_suffix('.json'), 'w') as f:
+                json.dump(param_dicts[i // 3], f, indent=2)
             mmif_fname = cur_root / f'{guid}.mmif'
         if not mmif_fname:
             return upload_no_views_response(mmif_fname)
@@ -130,7 +179,7 @@ def download_mmif():
     data = json.loads(request.data.decode('utf-8'))
     # get both pipeline and guid from data
     # obtain pipeline using helper method
-    pipeline = generate_pipeline_identifier(data)
+    pipeline = generate_workflow_identifier(data)
     # get number of views for rewind if necessary
     num_views = len(data.get('pipeline', []))
     guid = data.get('guid')
