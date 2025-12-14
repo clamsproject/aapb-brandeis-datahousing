@@ -54,19 +54,19 @@ In the first case you get a warning if a file was already uploaded, in the secon
 
 **Downloading MMIF files**
 
-This uses the `storeapi/download` route. There are three modes. In the zero-GUID mode you just hand in a pipeline specification and the server returns the server path and all files at that path:
+This uses the `storeapi/download` route. There are three modes. In the zero-GUID mode you just hand in a workflow specification and the server returns the server path and all files at that path:
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {"swt-detection/v2.0-38-g7838415": {"pretty": "True"}}}'
+    -d '{"workflow": {"swt-detection/v2.0-38-g7838415": {"pretty": "True"}}}'
 ```
 ```json
 {
   "filenames": [
     "cpb-aacip-690722078b2"
   ],
-  "pipeline": "/Users/Shared/aapb/storage-test/swt-detection/v2.0-38-g7838415/5fe49d06725497b274b6eaaf0fe0c5d2"
+  "workflow": "/Users/Shared/aapb/storage-test/swt-detection/v2.0-38-g7838415/5fe49d06725497b274b6eaaf0fe0c5d2"
 }
 ```
 
