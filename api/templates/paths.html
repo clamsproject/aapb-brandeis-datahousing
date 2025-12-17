@@ -1,0 +1,47 @@
+<!doctype html>
+
+<head>
+    <title>Storage Server Browser</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prism.css') }}">
+</head>
+
+<body>
+
+<h2>Storage Server Browser &mdash; Browse Paths</h2>
+
+<p>
+  [ <a href='index.html'>Home</a>
+  | <a href="search_assets.html">Search assets</a>
+  | <a href="search_mmif.html">Search MMIF files</a>
+  | <a href="browse_paths.html">Browse paths</a>
+  | <a href="analytics.html">Storage analytics</a>
+  ]
+</p>
+
+<p>{{' > '.join(path.parts)}}</p>
+
+<ul>
+{% for sub in subs %}
+<li><a href=browse_paths.html?path={{sub}}>{{sub.name}}</a></li>
+{% endfor %}
+</ul>
+
+{% if header %}
+<h4>{{header}}</h4>
+{% endif %}
+
+{% if content %}
+<blockquote>
+{% if not app_spec %}
+<p><a href=collapsible_mmif.html?path={{path}}>Collapsible MMIF</a></p>
+{% endif %}
+<pre><code class="language-json">{{content}}</code></pre>
+</blockquote>
+{% endif %}
+
+<script src="{{ url_for('static', filename='js/prism.js') }}"></script>
+
+</body>
+
+</html>

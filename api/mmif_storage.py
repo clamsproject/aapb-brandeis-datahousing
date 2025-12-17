@@ -8,19 +8,17 @@ import zipfile as zf
 from pathlib import Path
 from zipfile import ZIP_DEFLATED
 
-from mmif import utils
-from clams_utils.aapb import guidhandler
 from flask import request, jsonify, Blueprint, current_app, send_file
-from mmif import Mmif
+
+from mmif import utils, Mmif, View
+from clams_utils.aapb import guidhandler
 
 from api import STORAGE_DIR
+from api.utils import hash_from_dictionary
 
 
 # make blueprint of app to be used in __init__.py
 bp = Blueprint(__file__.split(os.sep)[-1].split('.')[0].replace('_', '-'), __name__)
-# get post request from user
-# read mmif inside post request, get view metadata
-# store in nested directory relating to view metadata
 
 
 API_PREFIX = '/storeapi'
@@ -146,26 +144,26 @@ def upload_error_response(e):
 @bp.post(f"{API_PREFIX}/download")
 def download_mmif():
     data = json.loads(request.data.decode('utf-8'))
-    # get both pipeline and guid from data
-    # obtain pipeline using helper method
-    pipeline = pipeline_from_param_json(data)
-    # get number of views for rewind if necessary
-    num_views = len(data.get('pipeline', []))
+    #print(data)
+    #print('>>> type of data:', type(data))
+    #print('>>> type of pipeline:', type(data['pipeline']))
+    # get guid and pipeline from POST data, and process pipeline using helper method
     guid = data.get('guid')
-    # validate existence of pipeline, guid is not necessary if you just want the pipeline returned
+    pipeline = path_from_pipeline_specs(data)
+    # number of apps for rewind if necessary
+    num_apps = len(data.get('pipeline', {}))
+    # validate existence of pipeline, the guid is optional
     if not pipeline:
         return jsonify({'error': 'Missing required parameters: need at least a pipeline'})
-    # load environment variables to concat pipeline with local storage path
-    directory = os.environ.get('STORAGE_DIR')
-    pipeline = os.path.join(directory, pipeline)
+    # create full absolute pipeline path using the STORAGE_DIR environment variable
+    full_pipeline_path = os.path.join(os.environ.get('STORAGE_DIR'), pipeline)
     if not guid:
-        return zero_guid_download_response(pipeline)
+        return zero_guid_download_response(full_pipeline_path)
     # Checking if the GUID is a single value or a list
     if not isinstance(guid, list):
-        return single_guid_download_response(pipeline, guid, num_views)
+        return single_guid_download_response(full_pipeline_path, guid, num_apps)
     else:
-        return multi_guid_download_response(pipeline, guid, num_views)
-
+        return multi_guid_download_response(full_pipeline_path, guid, num_apps)
 
 def parse_parameters(view):
     """
@@ -188,31 +186,19 @@ def parse_parameters(view):
     return param_dict, param_hash
 
 
-# helper method for extracting pipeline
-def pipeline_from_param_json(param_json):
+def path_from_pipeline_specs(pipeline_spec: dict):
     """
-    This method reads in a json containing the names of the pipelined apps and their
-    respective parameters, and then builds a path out of the pipelined apps and hashed
-    parameters.
+    Helper method to read in a json object containing the names of the pipelined
+    apps and their parameters, and then builds a path out of the pipelined apps
+    and hashed parameters.
     """
-    pipeline = ""
-    for clams_app in param_json["pipeline"]:
-        # not using os path join until later for testing purposes
-        pipeline = pipeline + "/" + clams_app
-        # try to get param items
-        try:
-            param_list = ['='.join(pair) for pair in param_json["pipeline"][clams_app].items()]
-            param_list.sort()
-            param_string = ','.join(param_list)
-        # throws attribute error if empty (because empty means it's a set and not dict)
-        except AttributeError:
-            param_string = ""
-        # hash parameters
-        param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
-        pipeline = pipeline + "/" + param_hash
+    pipeline_path = ""
+    for clams_app in pipeline_spec["pipeline"]:
+        # TODO: should probably use pathlib.Path
+        param_hash = hash_from_dictionary(pipeline_spec["pipeline"][clams_app])
+        pipeline_path += f"/{clams_app}/{param_hash}"
     # removing first "/" so it doesn't mess with os.path.join later
-    pipeline = pipeline[1:]
-    return pipeline
+    return pipeline_path[1:]
 
 
 def zero_guid_download_response(pipeline: str):
@@ -222,6 +208,7 @@ def zero_guid_download_response(pipeline: str):
     downloading files (for working with local files).
     """
     filenames = [p.stem for p in Path(pipeline).glob('*')]
+    print(filenames)
     return jsonify({'pipeline': pipeline, 'filenames': filenames})
 
 
@@ -323,10 +310,10 @@ def storage_analytics():
     app_specs = {}
 
     for root, dirs, files in os.walk(STORAGE_DIR):
-        if current_app.config.get('DEBUG'):
-            print("Root:", root)
-            print("dirs:", dirs)
-            print("files:", files)
+        #if current_app.config.get('DEBUG'):
+        #    print("Root:", root)
+        #    print("dirs:", dirs)
+        #    print("files:", files)
 
         curr_pipeline = root[root.index(STORAGE_DIR) + len(STORAGE_DIR):]
         curr_pipeline = curr_pipeline.lstrip('/')

@@ -15,6 +15,7 @@ ASSET_DIR = os.environ.get('ASSET_DIR')
 DOWNLOAD_DIR = os.environ.get('DOWNLOAD_DIR')
 STORAGE_DIR = os.environ.get('STORAGE_DIR')
 BUILD_DB = bool(int(os.environ.get('BUILD_DB')))
+DEVELOPER_MODE = bool(int(os.environ.get('DEVELOPER_MODE')))
 
 
 # Asset file types
@@ -25,12 +26,19 @@ file_types = [
     ('audio', ['.mp3', '.wav']),
     ('video', ['.mp4', '.mov', 'webm', 'mkv'])]
 
+
 file_types_idx = {}
 for file_type, extensions in file_types:
     for extension in extensions:
         file_types_idx[extension] = file_type
 
-bp = Blueprint('app', __name__, template_folder='templates')
+
+bp = Blueprint('app', __name__)
+
+
+@bp.get('/')
+def index():
+    return {"message": "This is the CLAMS file server"}
 
 
 def shorten_guid(guid):
@@ -155,8 +163,6 @@ def database_search(connection, guid, types):
     if types:
         type_clause = f'file_type IN ({",".join(["?"] * len(types))})'
         query = f"SELECT file_type, server_path FROM map WHERE (GUID MATCH ?) AND {type_clause};"
-        print(query)
-        #paths = connection.execute(query, (guid,) + tuple(types)).fetchall()
         paths = connection.execute(query, (f'"{guid}"',) + tuple(types)).fetchall()
     else:
         query = "SELECT file_type, server_path FROM map WHERE GUID MATCH ?;"
@@ -195,6 +201,16 @@ def search_api():
     file_type = request.args.getlist('file') if 'file' in request.args else []
     guid = request.args['guid']
     only_first = request.args.get('onlyfirst', False)
+    paths = search_assets(guid, file_type)
+    if len(paths) > 0:
+        return paths[0] if only_first else paths
+    else:
+        return 'The requested file does not exist in our server', 404
+
+
+def search_assets(guid, file_type=None):
+    if file_type is None:
+        file_type = []
     connection = get_db_connection()
     paths = database_search(connection, guid, file_type)
     # TODO (marc @ 12/12/25): doing a full directory search each time you do not find
@@ -204,25 +220,26 @@ def search_api():
     if len(paths) == 0:
         # making sure the paths are strings, to match the paths from the database search
         paths = [str(p) for p in directory_search(guid)]
+        # NOTE: disabling this for now because in some cases the update still results
+        # in a fulll directory scan
         #if len(results) > 0:
         #    for result in results:
         #        insert_into_db(connection, guid, result)
         #    paths = database_search(connection, guid, file_type)
     connection.close()
-    if len(paths) > 0:
-        return paths[0] if only_first else paths
-    else:
-        return 'The requested file does not exist in our server', 404
+    return paths
 
 
-def create_app(build_db=BUILD_DB):
+def create_app(build_db=BUILD_DB, developer_mode=DEVELOPER_MODE):
     initialize_database(build_db)
     app = Flask(__name__)
     app.config.from_prefixed_env()
     app.register_blueprint(bp)
-    # Instead of using `url_prefix`, we use dedicated `API_PREFIX` vars in blueprints
-    # this will eliminate unnecessary redirection step (and forced use of `-L` flag in
-    # in curl). The import is not at the top of the file to avoid import errors.
     from api.mmif_storage import bp as mmif_bp
+    from api.www import bp as www_bp
     app.register_blueprint(mmif_bp)
+    app.register_blueprint(www_bp)
+    if developer_mode:
+        from api.experiments import bp as exp_bp
+        app.register_blueprint(exp_bp)
     return app

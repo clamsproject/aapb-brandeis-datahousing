@@ -59,18 +59,26 @@ This uses the `storeapi/download` route. There are three modes. In the zero-GUID
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {"swt-detection/v2.0-38-g7838415": {"pretty": "True"}}}'
+    -d '{"pipeline": 
+          {"swt-detection/v6.1": 
+            {"useStitcher": "false", "runningTime": "true", "hwFetch": "true"}}}'
 ```
 ```json
 {
   "filenames": [
-    "cpb-aacip-690722078b2"
+    "cpb-aacip-259-wh2dcb8p",
+    "cpb-aacip-c72fd5cbadc",
+    "cpb-aacip-259-4j09zf95",
+    "cpb-aacip-516-8c9r20sq57",
+    "cpb-aacip-259-5717pw8g"
   ],
-  "pipeline": "/Users/Shared/aapb/storage-test/swt-detection/v2.0-38-g7838415/5fe49d06725497b274b6eaaf0fe0c5d2"
+  "pipeline": "/Users/Shared/aapb/mmif-storage-251016/swt-detection/v6.1/eccbfd0460c3f5503531d673e579d1c9"
 }
 ```
 
-If you add a GUID, then the server will return a MMIF file or a warning if the file did not exist:
+If the pipeline path did not exist on the server, the response will still include a file path, but the list of files will be empty.
+
+For the single-guid mode you add a guid and the server will return a MMIF file or a warning if the file did not exist:
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download
@@ -163,13 +171,16 @@ This returns a dictionary with information on the full pipeline, e.g.:
 
 ### Deploy on your own
 
-Install all the python dependencies with `pip install -r requirements.txt`, and configure your server using `.env` file or via environment variables (See `.env.sample` file for an example).
+Install all the python dependencies with `pip install -r requirements.txt`, and configure your server using a `.env` file or via environment variables (see `.env.sample` for an example configuration file). The following variables need to be defined:
 
 * `FLASK_APP`: must be `api`
 * `FLASK_DEBUG`: set to `1` to enable debug mode, otherwise `0`
 * `FLASK_RUN_PORT`: port number to listen on
 * `FLASK_RUN_HOST`: hostname to listen
 * `ASSET_DIR`: path to the directory on the server where the AAPB media files (assets) are stored
+* `DOWNLOAD_DIR`: currently not in use
+* `STORAGE_DIR`: the directory where MMIF files are stored
 * `BUILD_DB`: set to `1` to build the database from scratch, otherwise `0`
+* `DEVELOPER_MODE`: set to `1`  for developer mode, which adds some routes to the API
 
 Start the server with `flask run`.
