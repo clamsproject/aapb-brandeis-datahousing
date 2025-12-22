@@ -38,7 +38,7 @@ bp = Blueprint('app', __name__)
 
 @bp.get('/')
 def index():
-    return {"message": "This is the CLAMS file server"}
+    return {"message": "This is the MMIF storage server"}
 
 
 def shorten_guid(guid):

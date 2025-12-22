@@ -28,6 +28,7 @@
             <td>file types (whitespace separated)</td>
             <td><input type="text" name="filetypes" value='{{" ".join(types)}}'></td>
         </tr>
+        <!--
         <tr valign="top">
             <td>first only</td>
             <td>
@@ -36,6 +37,7 @@
                 <input type="radio" name="firstonly" value="no" checked="true">
                 <label for="visa">no</label>
         </tr>
+        -->
     </table>
     <p><input type="submit"></p>
 </form>
@@ -43,15 +45,21 @@
 
 <h4>Results</h3>
 
+<blockquote>
+
 <p>TOTAL HITS: {{ paths.__len__() }}</p>
 
-<ol>
-{% for path in paths %}
-    <li>{{ path }}</li>
+<table cellpadding="8" cellspacing="0" border="1">
+{% for n, path in paths %}
+    <tr>
+        <td align="right">{{ n + 1 }}</td>
+        <td>{{ path }}</td>
+    </tr>
 {% endfor %}
-</ol>
+</table>
+
+</blockquote>
 
 </body>
-
 
 </html>

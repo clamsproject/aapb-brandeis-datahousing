@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import json
 import tempfile
 from pathlib import Path
@@ -8,11 +9,14 @@ from operator import itemgetter
 
 from flask import Flask, request, jsonify, Blueprint, render_template
 
+import mmif
+
 from summarizer import Summary
 
 from api import search_assets
 from api.mmif_storage import StorageServerError
 from api.mmif_storage import path_from_pipeline_specs, get_mmif_for_guid, storage_analytics
+from api.utils import strip_prefix, StorageUnit
 
 
 load_dotenv()
@@ -24,6 +28,7 @@ bp = Blueprint('www', __name__, template_folder='templates')
 DEBUG = True
 
 
+ASSET_DIR = os.environ.get('ASSET_DIR')
 STORAGE_DIR = os.environ.get('STORAGE_DIR')
 
 
@@ -34,114 +39,103 @@ def index():
 
 
 @bp.route('/www/search_assets.html', methods=['get', 'post'])
-def assets():
-    term = None
-    types = None
+def search_assets():
+    term = ''
+    types = []
     paths = []
     if request.method == 'POST':
         term = request.form.get('searchterm')
-        types = request.form.get('filetypes')
+        types = request.form.get('filetypes').split()
         paths = search_assets(term, types)
-    types = [] if types is None else types.split()
-    return render_template('assets.html', term=term, types=types, paths=paths)
+        paths = [str(strip_prefix(ASSET_DIR, Path(p))) for p in paths]
+        paths = list(enumerate(paths))
+    return render_template('search_assets.html', term=term, types=types, paths=paths)
 
 
 @bp.route('/www/search_mmif.html', methods=['get', 'post'])
-def mmif_files():
+def search_mmif():
     # TODO: there is some overlap here with api.mmif_storage.download_mmif()
     # may need some refactoring
-    guid = ''
-    pipeline = ''
-    result = ''
-    result_header = ''
-    if request.method == 'POST':
-        guid = request.form.get('guid')
-        pipeline = request.form.get('pipeline')
-        debug(f'{guid} {pipeline}')
-        if not pipeline:
-            message = 'Missing required parameter: need at least a pipeline'
-            result = jsonify({'error': message}).data.decode('utf-8')
-        else:
-            pipeline_path = path_from_pipeline_specs({"guid": guid, "pipeline": json.loads(pipeline)})
-            debug(f'{guid} [{pipeline_path}]')
-            # create full absolute pipeline path using the STORAGE_DIR environment variable
-            full_pipeline_path = os.path.join(os.environ.get('STORAGE_DIR'), pipeline_path)
-            if not guid:
-                filenames = [p.stem for p in Path(full_pipeline_path).glob('*')]
-                result_dict = {"pipeline": pipeline_path, "filenames": filenames}
-                result_header = 'Pipeline path and filenames'
-                result = json.dumps(result_dict, indent=2)
-            elif not isinstance(guid, list):
-                result_header = 'MMIF File'
-                try:
-                    num_apps = len(json.loads(pipeline))
-                    mmif = get_mmif_for_guid(full_pipeline_path, guid, num_apps)
-                    result = jsonify(mmif).data.decode("utf-8")
-                except StorageServerError as e:
-                    result = jsonify({"error": str(e)}).data.decode('utf-8')
-            else:
-                result = {}
+    guid = request.form.get('guid', '')
+    pipeline = request.form.get('pipeline', '')
+    debug(f'guid = {guid}')
+    debug(f'pipeline = {" ".join(str(pipeline).split())}')
+    status = None
+    message = None
+    mmif_file = None
+    mmif_files = None
+    pipeline_path = None
+    if not pipeline:
+        status = 'no-pipeline'
+        message = 'Missing required parameter: need at least a pipeline'
+        message = json.dumps({"message": message}, indent=2)
+    else:
+        pipeline_path = path_from_pipeline_specs(
+            {"guid": guid, "pipeline": json.loads(pipeline)})
+        debug(f'pipeline_path = {pipeline_path}')
+        full_pipeline_path = os.path.join(os.environ.get('STORAGE_DIR'), pipeline_path)
+        if not guid:
+            # get the files at the pipeline path
+            status = 'pipeline'
+            mmif_files = sorted([p.stem for p in Path(full_pipeline_path).glob('*')])
+            debug(f'Found {len(mmif_files)} MMIF files for pipeline')
+        elif isinstance(guid, str):
+            # get the one MMIF file, but check for its existence
+            status = 'pipeline-guid'
+            mmif_file = Path(full_pipeline_path) / f'{guid}.mmif'
+            if not mmif_file.exists():
+                status = 'pipeline-guid-no-files'
+                message = json.dumps(
+                    {"message" : f"File does not exist at that path",
+                     "filename": mmif_file.name,
+                     "pathname": pipeline_path}, indent=2)
+    debug(f'status = {status}')
     return render_template(
-        'mmif_files.html',
-        guid=guid, pipeline=pipeline, result=result, result_header=result_header)
+        'search_mmif.html',
+        status=status, message=message, guid=guid, pipeline=pipeline,
+        path=pipeline_path, mmif_file=mmif_file, mmif_files=mmif_files)
 
 
 @bp.get('/www/browse_paths.html')
-def browse():
+def browse_paths():
+    def is_derived(path):
+        return path.name.endswith('.summ.json') or path.name.endswith('.desc.json')
     path = Path(request.args.get("path", STORAGE_DIR))
     path_for_display = Path(*path.parts[len(Path(STORAGE_DIR).parts):])
     debug(f'base = {Path(STORAGE_DIR)}')
     debug(f'path = {path_for_display}')
-    subs = []
-    header = ''
-    content = ''
-    app_spec = False
-    # For a directory, get the directories and files contained in it
-    if path.is_dir():
-        subs = list(path.iterdir())
-    # For a JSON file with app specifications, just load those specs
-    elif re.match("[0-9a-z]{32}\.json", path.name):
-        app_spec = True
-        header = 'App specifications'
-        content = jsonify(json.loads(path.read_text())).data.decode('utf-8')
-    # For a MMIF file, get its summary
-    else:
-        debug(f'Summarizing {path_for_display}')
-        summary = Summary(path)
-        summary_file = Path(tempfile.gettempdir()) / 'summary.json'
-        debug(f'Summary file: {summary_file}')
-        summary.report(outfile=summary_file, full=True)
-        header = 'Summary of MMIF file'
-        content = summary_file.read_text()
-    debug(f'header={header} subs={len(subs)}')
+    subs = list(sorted(path.iterdir())) if path.is_dir() else []
+    subs = [sub for sub in subs if not is_derived(sub)]
+    # At the moment the template distinguishes between property files and MMIF 
+    # simply by using the extension. There may be a use case for doing it here
+    # and use somehwhat more sophisticated code like using a regular expression
+    # to get the property file: re.match("[0-9a-z]{32}\.json", path.name
     return render_template(
-        'paths.html',
-        path=path_for_display, subs=sorted(subs), app_spec=app_spec,
-        header=header, content=content)
+        'browse_paths.html', path=path_for_display, subs=subs)
 
 
-@bp.get('/www/collapsible_mmif.html')
-def collapsible_mmif():
-    path = Path(STORAGE_DIR) / request.args.get("path")
-    path_for_display = Path(*path.parts[len(Path(STORAGE_DIR).parts):])
-    debug(path)
-    # TODO: same as above, refactor
-    debug(f'Summarizing {path_for_display}')
-    summary = Summary(path)
-    summary_file = Path(tempfile.gettempdir()) / 'summary.json'
-    debug(f'Summary file: {summary_file}')
-    summary.report(outfile=summary_file, full=True)
-    header = 'Summary of MMIF file'
-    content = summary_file.read_text()
+@bp.get('/www/view_parameters.html')
+def view_parameters():
+    path = Path(request.args.get("path"))
+    parameters = json.dumps(json.loads(path.read_text()), indent=2)
+    size = path.stat().st_size
+    size_str = f'{size:,d}'
     return render_template(
-        'collapsible.html', path=path_for_display, header=header, content=content)
+        'view_parameters.html', path=path, size=size_str, parameters=parameters)
+
+
+@bp.get('/www/view_mmif.html')
+def view_file():
+    mode = request.args.get("mode")
+    path = Path(request.args.get("path"))
+    unit = StorageUnit(STORAGE_DIR, path)
+    debug(f'mode = {mode}')
+    return render_template('view_mmif.html', mode=mode, unit=unit, path=unit.path)
 
 
 @bp.get('/www/analytics.html')
 def analytics():
     analytics = json.loads(storage_analytics().data)
-    print(type(analytics['pipelines']))
-    print(analytics['pipelines'][0])
     properties = {p: analytics[p] for p in analytics.keys() if p != 'pipelines'}
     pipelines = sorted(analytics['pipelines'], key=itemgetter('path'))
     for pl in pipelines:
