@@ -11,6 +11,7 @@
 
 <body>
 
+{% set path = mfile.path %}
 
 <h2>Storage Server &mdash; MMIF File</h2>
 
@@ -24,16 +25,16 @@
 </p>
 
 
-<h4>{{path.name}}</h4>
+<h4>{{ path.name }}</h4>
 
 <table cellpadding="8" cellspacing="0" border="1">
     <tr>
         <td>path to file</td>
-        <td><a href="browse_paths.html?path={{path.parent}}">{{unit.relative_path()}}</a></td>
+        <td><a href="browse_paths.html?path={{ path.parent }}">{{ path.parent.name }}</a></td>
     </tr>
     <tr>
         <td>size of file</td>
-        <td>{{unit.mmif_size_as_string()}}</td>
+        <td>{{ "{:,}".format(mfile.mmif_size()) }}</td>
     </tr>
 </table>
 
@@ -86,10 +87,10 @@
 {% if mode == 'parameters' %}
 
 <h4>Parameters</h4>
-{% for app, parameters in unit.parameters() %}
-<p>{{app}}</p>
+{% for app, parameters in mfile.parameters() %}
+<p>{{ app }}</p>
 <blockquote>
-    <pre><code class="language-json">{{parameters}}</code></pre>
+    <pre><code class="language-json">{{ parameters }}</code></pre>
 </blockquote>
 {% endfor %}
 
@@ -97,38 +98,35 @@
 
 <h4>MMIF File</h4>
 <blockquote>
-    <pre><code class="language-json">{{unit.mmif_content()}}</code></pre>
+    <pre><code class="language-json">{{ mfile.mmif_content() }}</code></pre>
 </blockquote>
 
 {% elif mode == 'description' %}
 
 <h4>MMIF File Description</h4>
 <blockquote>
-    <pre><code class="language-json">{{unit.description_content()}}</code></pre>
+    <pre><code class="language-json">{{ mfile.description_content() }}</code></pre>
 </blockquote>
 
 {% elif mode == 'summary' %}
 
 <h4>Summary</h4>
-{% if unit.summary_error %}
-{% else %}
 <blockquote>
-    <pre><code class="language-json">size = {{unit.summary_size_as_string()}}</code></pre>
-    <pre><code class="language-json">{{unit.summary_content()}}</code></pre>
-    }
+    <a href="inspector.html?path={{path}}">Open inspector</a><br/><br/>
+    <pre><code class="language-json">size = {{ "{:,}".format(mfile.summary_size()) }}</code></pre>
+    <pre><code class="language-json">{{ mfile.summary_content() }}</code></pre>
 </blockquote>
-{% endif %}
 
 {% elif mode == 'collapsible' %}
 
 <h4>Collapsible Summary</h4>
 <blockquote>
-    <pre><code class="language-json">size = {{unit.summary_size_as_string()}}</code></pre>
+    <pre><code class="language-json">size = {{ "{:,}".format(mfile.summary_size()) }}</code></pre>
     <div id="mmif"></div>
 </blockquote>
 <script>
 renderjson.set_show_to_level(2);
-var mmif = {{unit.summary_content() | safe}};
+var mmif = {{ mfile.summary_content() | safe }};
 document.getElementById("mmif").appendChild(renderjson(mmif));
 </script>
 

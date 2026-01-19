@@ -1,6 +1,6 @@
 # AAPB-Brandeis datahousing server
 
-Codebase for the datahousing server deployed on Brandeis-LLC site as a part of [CLAMS Project](https://www.clams.ai). 
+Codebase for the datahousing server deployed on the Brandeis-LLC site as a part of the [CLAMS Project](https://www.clams.ai). 
 
 At the moment, the server is used to resolve AAPB GUIDs to local file paths, and works with the accompanying client, [`mmif-docloc-baapb`](https://github.com/clamsproject/mmif-docloc-baapb) MMIF plugin.
 

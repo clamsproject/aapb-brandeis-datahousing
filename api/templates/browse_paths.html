@@ -18,22 +18,32 @@
   ]
 </p>
 
-<p>{{' > '.join(path.parts)}}</p>
+<h4>{{ sdir.path_for_display() }}</h4>
 
+{% set directories = sdir.directories() %}
+{% set files = sdir.files() %}
+
+{% if directories %}
+<p>Directories</p>
 <ul>
-{% for sub in subs %}
-{% if sub.is_file() %}
-{% if sub.suffix == '.json' %}
-<li><a href=view_parameters.html?path={{sub}}>{{sub.name}}</a></li>
-{% elif sub.suffix == '.mmif' %}
-<li><a href=view_mmif.html?&mode=parameters&path={{sub}}>{{sub.name}}</a></li>
+{% for d in directories %}
+<li><a href=browse_paths.html?path={{d}}>{{d.name}}</a></li>
+{% endfor %}
+</ul>
 {% endif %}
-{% elif sub.is_dir() %}
-<li><a href=browse_paths.html?path={{sub}}>{{sub.name}}</a></li>
+
+{% if files %}
+<p>Files</p>
+<ul>
+{% for f in files %}
+{% if f.suffix == '.json' %}
+<li><a href=view_parameters.html?path={{f}}>{{f.name}}</a></li>
+{% elif f.suffix == '.mmif' %}
+<li><a href=view_mmif.html?&mode=parameters&path={{f}}>{{f.name}}</a></li>
 {% endif %}
 {% endfor %}
 </ul>
+{% endif %}
 
 </body>
-
 </html>

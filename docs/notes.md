@@ -36,3 +36,26 @@ My suggestion is to not bother about this till until we know how much redundancy
 ### More
 
 Return values are a bit mixed, sometimes a json structure, sometimes a string (which is JSON, but you get the point).
+
+
+### Wrong links to file
+
+When searching on;
+
+| field | value |
+| ----- | ------|
+|GUID | cpb-aacip-525-028pc2v94s |
+|Pipeline | {"chyron-detection/v1.0": {}}|
+
+You get a full URL in for one file:
+
+```
+<a href="view_mmif.html?mode=parameters&path=/Users/Shared/aapb/mmif-storage-251016/chyron-detection/v1.0/d41d8cd98f00b204e9800998ecf8427e/cpb-aacip-525-028pc2v94s.mmif">
+```
+
+But if you do not include the GUID you get a list, which includes the same file but now the link is
+
+```
+<a href="view_mmif.html?mode=parameters&path=chyron-detection/v1.0/d41d8cd98f00b204e9800998ecf8427e/cpb-aacip-525-028pc2v94s.mmif">```
+
+ANd then clicking it fails. Standardize on the second throughout.

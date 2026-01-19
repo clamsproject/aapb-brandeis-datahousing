@@ -8,15 +8,20 @@ from dotenv import load_dotenv
 from operator import itemgetter
 
 from flask import Flask, request, jsonify, Blueprint, render_template
+from jinja2 import Template
 
 import mmif
 
-from summarizer import Summary
+import inspector as mmif_inspector
+from inspector.inspect import Summary
+from inspector.config import INDEX_PAGE, CSS_PAGE, JS_PAGE, VIEWS_PAGE
+from inspector.config import TIMEFRAMES_PAGE, CORRELATIONS_PAGE, TRANSCRIPT_PAGE
+from inspector.config import CAPTIONS_PAGE, ENTITIES_PAGE
 
 from api import search_assets
 from api.mmif_storage import StorageServerError
 from api.mmif_storage import path_from_pipeline_specs, get_mmif_for_guid, storage_analytics
-from api.utils import strip_prefix, StorageUnit
+from api.utils import strip_prefix, ServerDirectory, MmifFile, ParameterFile
 
 
 load_dotenv()
@@ -39,7 +44,7 @@ def index():
 
 
 @bp.route('/www/search_assets.html', methods=['get', 'post'])
-def search_assets():
+def search_asset():
     term = ''
     types = []
     paths = []
@@ -98,39 +103,58 @@ def search_mmif():
 
 @bp.get('/www/browse_paths.html')
 def browse_paths():
-    def is_derived(path):
-        return path.name.endswith('.summ.json') or path.name.endswith('.desc.json')
-    path = Path(request.args.get("path", STORAGE_DIR))
-    path_for_display = Path(*path.parts[len(Path(STORAGE_DIR).parts):])
-    debug(f'base = {Path(STORAGE_DIR)}')
-    debug(f'path = {path_for_display}')
-    subs = list(sorted(path.iterdir())) if path.is_dir() else []
-    subs = [sub for sub in subs if not is_derived(sub)]
-    # At the moment the template distinguishes between property files and MMIF 
-    # simply by using the extension. There may be a use case for doing it here
-    # and use somehwhat more sophisticated code like using a regular expression
-    # to get the property file: re.match("[0-9a-z]{32}\.json", path.name
-    return render_template(
-        'browse_paths.html', path=path_for_display, subs=subs)
+    sdir = ServerDirectory(STORAGE_DIR, request.args.get("path"))
+    return render_template('browse_paths.html', sdir=sdir)
 
 
 @bp.get('/www/view_parameters.html')
 def view_parameters():
-    path = Path(request.args.get("path"))
-    parameters = json.dumps(json.loads(path.read_text()), indent=2)
-    size = path.stat().st_size
-    size_str = f'{size:,d}'
-    return render_template(
-        'view_parameters.html', path=path, size=size_str, parameters=parameters)
+    pfile = ParameterFile(STORAGE_DIR, request.args.get("path"))
+    return render_template('view_parameters.html', pfile=pfile)
 
 
 @bp.get('/www/view_mmif.html')
 def view_file():
     mode = request.args.get("mode")
-    path = Path(request.args.get("path"))
-    unit = StorageUnit(STORAGE_DIR, path)
+    mfile = MmifFile(STORAGE_DIR, Path(request.args.get("path")))
     debug(f'mode = {mode}')
-    return render_template('view_mmif.html', mode=mode, unit=unit, path=unit.path)
+    if mode in ('summary', 'collapsible'):
+        # Doing this upfront (unlike with the description) to avoid issues with
+        # the summary size later.
+        debug(f'Creating summary for {mfile.path.name}')
+        mfile.create_summary()
+    return render_template('view_mmif.html', mfile=mfile, mode=mode)
+
+
+@bp.get('/www/inspector.html')
+def inspector():
+    templates_dir = Path(mmif_inspector.__file__).parent / 'templates'
+    mmif_file = Path(request.args.get("path"))
+    summ_file = Path(STORAGE_DIR) / mmif_file.parent / f'{mmif_file.stem}.summ.json'
+    # TODO: assumes the summary exists, may need a test here or in the template
+    summary = json.loads(summ_file.read_text())
+    template_file = Path(templates_dir) / 'index.html'
+    template = Template(template_file.read_text())
+    rendered_template = template.render(summary=Summary(summ_file, summary))
+    return render_template
+    #return (
+    #    f'<table cellpadding=8 cellspacing=0 border=1>\n'
+    #    f'<tr><td>MMIF File</td><td>{mmif_file}</td></tr>\n'
+    #    f'<tr><td>Summary</td><td>{summ_file}</td></tr>\n')
+
+
+def inspector_table(path, summary, inspector, related_items):
+    return (
+        "<table cellspacing=0 cellpadding=8 border=1>\n"
+        + f"<tr><td>path</td><td>{str(path)}</td>\n"
+        + f"<tr><td>parent</td><td>{str(path.parent)}</td>\n"
+        + f"<tr><td>name</td><td>{path.name}</td>\n"
+        + f"<tr><td>related</td><td>{str([r.name for r in related_items])}</td>\n"
+        + f"<tr><td>summary</td><td>{str(summary)}</td>\n"
+        + f"<tr><td>summary exists</td><td>{summary.exists()}</td>\n"
+        + f"<tr><td>inspector</td><td>{inspector}</td>\n"
+        + f"<tr><td>inspector exists</td><td>{inspector.exists()}</td>\n"
+        + "<table>\n")
 
 
 @bp.get('/www/analytics.html')
