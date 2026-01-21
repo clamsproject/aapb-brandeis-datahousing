@@ -4,7 +4,9 @@
 ### aapb-brandeis-datahousing ###
 
 api/database.*
+api/multi-guid-response*
 examples/*
+packages/*
 out*
 log*
 *.mmif
