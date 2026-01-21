@@ -1,5 +1,6 @@
 import os
 import re
+import io
 import sys
 import json
 import tempfile
@@ -12,7 +13,7 @@ from jinja2 import Template
 
 import mmif
 
-import inspector as mmif_inspector
+import inspector
 from inspector.inspect import Summary
 from inspector.config import INDEX_PAGE, CSS_PAGE, JS_PAGE, VIEWS_PAGE
 from inspector.config import TIMEFRAMES_PAGE, CORRELATIONS_PAGE, TRANSCRIPT_PAGE
@@ -126,35 +127,43 @@ def view_file():
     return render_template('view_mmif.html', mfile=mfile, mode=mode)
 
 
-@bp.get('/www/inspector.html')
-def inspector():
-    templates_dir = Path(mmif_inspector.__file__).parent / 'templates'
-    mmif_file = Path(request.args.get("path"))
-    summ_file = Path(STORAGE_DIR) / mmif_file.parent / f'{mmif_file.stem}.summ.json'
-    # TODO: assumes the summary exists, may need a test here or in the template
-    summary = json.loads(summ_file.read_text())
-    template_file = Path(templates_dir) / 'index.html'
-    template = Template(template_file.read_text())
-    rendered_template = template.render(summary=Summary(summ_file, summary))
-    return render_template
-    #return (
-    #    f'<table cellpadding=8 cellspacing=0 border=1>\n'
-    #    f'<tr><td>MMIF File</td><td>{mmif_file}</td></tr>\n'
-    #    f'<tr><td>Summary</td><td>{summ_file}</td></tr>\n')
+@bp.get('/www/inspector/index.html')
+def inspector_index():
+    data = InspectorData('index.html')
+    rendered_template = data.template.render(summary=Summary(data.summ_file, data.summary))
+    return update_rendered(rendered_template, data.css_file)
 
 
-def inspector_table(path, summary, inspector, related_items):
-    return (
-        "<table cellspacing=0 cellpadding=8 border=1>\n"
-        + f"<tr><td>path</td><td>{str(path)}</td>\n"
-        + f"<tr><td>parent</td><td>{str(path.parent)}</td>\n"
-        + f"<tr><td>name</td><td>{path.name}</td>\n"
-        + f"<tr><td>related</td><td>{str([r.name for r in related_items])}</td>\n"
-        + f"<tr><td>summary</td><td>{str(summary)}</td>\n"
-        + f"<tr><td>summary exists</td><td>{summary.exists()}</td>\n"
-        + f"<tr><td>inspector</td><td>{inspector}</td>\n"
-        + f"<tr><td>inspector exists</td><td>{inspector.exists()}</td>\n"
-        + "<table>\n")
+@bp.get('/www/inspector/views.html')
+def inspector_views():
+    return display_inspector_page('views.html')
+
+
+@bp.get('/www/inspector/timeframes.html')
+def inspector_timeframes():
+    data = InspectorData('timeframes.html')
+    rendered_template = data.template.render(summary=Summary(data.summ_file, data.summary))
+    return update_rendered(rendered_template, data.css_file, data.js_file)
+
+
+@bp.get('/www/inspector/transcript.html')
+def inspector_transcript():
+    data = InspectorData('transcript.html')
+    rendered_template = data.template.render(summary=Summary(data.summ_file, data.summary))
+    return update_rendered(rendered_template, data.css_file, data.js_file)
+
+
+@bp.get('/www/inspector/captions.html')
+def inspector_captions():
+    data = InspectorData('captions.html')
+    rendered_template = data.template.render(summary=Summary(data.summ_file, data.summary))
+    return update_rendered(rendered_template, data.css_file, data.js_file)
+
+
+def display_inspector_page(page_name: str) -> str:
+    data = InspectorData(page_name)
+    rendered_template = data.template.render(summary=Summary(data.summ_file, data.summary))
+    return update_rendered(rendered_template, data.css_file, data.js_file)
 
 
 @bp.get('/www/analytics.html')
@@ -166,6 +175,45 @@ def analytics():
         pl['full_path'] = Path(STORAGE_DIR) / pl['path']
     return render_template(
         'analytics.html', properties=properties, pipelines=pipelines)
+
+
+class InspectorData:
+
+    def __init__(self, page_name: str):
+        templates_dir = Path(inspector.__file__).parent / 'templates'
+        self.template = Template((Path(templates_dir) / page_name).read_text())
+        self.css_file = Path(inspector.__file__).parent / 'main.css'
+        self.js_file = Path(inspector.__file__).parent / 'main.js'
+        mmif_file = Path(request.args.get("path"))
+        self.summ_file = Path(STORAGE_DIR) / mmif_file.parent / f'{mmif_file.stem}.summ.json'
+
+    @property
+    def summary(self):
+        # TODO: assumes the summary exists, may need a test here or in the template
+        return json.loads(self.summ_file.read_text())
+
+    
+def update_rendered(html: str, css_file: Path, js_file: Path):
+    """Method to add the stylesheet and javascript that the inspector files need."""
+    # TODO: make adding the javascript file optional for some pages
+    # TODO: this way of adding path GET variable to subpages is fragile
+    path = request.args.get("path")
+    buffer = io.StringIO()
+    for line in html.split('\n'):
+        if line == '</head>':
+            buffer.write(f'<style>\n{css_file.read_text().strip()}\n</style>\n')
+            buffer.write(f'<script>\n{js_file.read_text().strip()}\n</script>\n')
+        elif '[ <a href="views.html">Views</a>' in line:
+            buffer.write(f'[ <a href="views.html?path={path}">Views</a>\n')
+        elif line == '| <a href="timeframes.html">TimeFrames</a>':
+            buffer.write(f'| <a href="timeframes.html?path={path}"">TimeFrames</a>\n')
+        elif line == '| <a href="transcript.html">Transcript</a>':
+            buffer.write('| <a href="transcript.html?path={path}"">Transcript</a>\n')
+        elif line == '| <a href="captions.html">Captions</a>':
+            buffer.write(f'| <a href="captions.html?path={path}"">Captions</a>\n')
+        else:
+            buffer.write(f'{line}\n')
+    return buffer.getvalue()
 
 
 def debug(message: str):
