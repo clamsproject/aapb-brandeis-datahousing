@@ -1,21 +1,18 @@
-import hashlib
 import io
 import json
 import os
 import re
 import zipfile as zf
-from collections import Counter
 from pathlib import Path
-from typing import List, Dict, Tuple, Union
+from typing import Union
 from zipfile import ZIP_DEFLATED
 
 from clams_utils.aapb import guidhandler
 from flask import request, jsonify, Blueprint, current_app, send_file
 from mmif import Mmif
 from mmif import utils
-from mmif.utils.workflow_helper import _split_appname_appversion
 from mmif.utils.workflow_helper import generate_param_hash
-from mmif.utils.workflow_helper import group_views_by_app
+from mmif.utils.workflow_helper import generate_workflow_identifier
 
 from api import STORAGE_DIRECTORY
 
@@ -40,51 +37,6 @@ def identifier_of_first_document(mmif_file: Mmif):
     return None
 
 
-def generate_workflow_identifier(data: Mmif) -> Tuple[str, List[Dict]]:
-    """
-    Mostly copied from mmif.utils.workflow_helper.generate_workflow_identifier version 1.2.1
-    with addition of getting the raw parameter dicts.
-    TODO In the future when mmif.utils.workflow_helper.generate_workflow_identifier supports returning
-    parameter dicts, we can switch to that.
-    """
-    segments = []
-    # First prefix is source information, sorted by document type
-    sources = Counter(doc.at_type.shortname for doc in data.documents)
-    segments.append('-'.join([f'{k}-{sources[k]}' for k in sorted(sources.keys())]))
-
-    # Group views into runs
-    grouped_apps = group_views_by_app(data.views)
-
-    param_dicts = []
-    for app_execution in grouped_apps:
-        # Use the first view in the run as representative for metadata
-        first_view = app_execution[0]
-
-        # Skip runs where the representative view has errors or warnings
-        if first_view.has_error() or first_view.has_warnings():
-            continue
-
-        app = first_view.metadata.get("app")
-        if app is None:
-            continue
-        app_name, app_version = _split_appname_appversion(app)
-
-        # Use raw parameters from the first view for reproducibility
-        try:
-            param_dict = first_view.metadata.parameters
-        except (KeyError, AttributeError):
-            param_dict = {}
-        param_dicts.append(param_dict)
-
-        param_hash = generate_param_hash(param_dict)
-
-        # Build segment: app_name/version/hash
-        name_str = app_name if app_name else "unknown"
-        version_str = app_version if app_version else "unversioned"
-        segments.append(f"{name_str}/{version_str}/{param_hash}")
-
-    return '/'.join(segments), param_dicts
-
 
 @bp.post(f"{API_PREFIX}/upload")
 def upload_mmif():
@@ -100,14 +52,10 @@ def upload_mmif():
         guid = guidhandler.get_aapb_guid_from(mmif[doc_id].location)
         cur_root = Path(STORAGE_DIRECTORY)
 
-        wfid, param_dicts = generate_workflow_identifier(mmif)
-        # wf_id syntax is source_info/app1name/app1version/app1paramhash/app2name/...
-        # need to pull appname/appversion from the id and find corresponding views to extract params from view metadata
+        wfid, param_dicts = generate_workflow_identifier(
+            mmif, return_param_dicts=True)
+        # wf_id syntax is app1name/app1version/app1paramhash/app2name/...
         segments = wfid.split('/')
-        # start from the first "source info" segment
-        cur_root = cur_root / Path(segments[0])
-        segments = segments[1:]
-        # make sure segments is multiple of 3
         if len(segments) % 3 != 0:
             return upload_error_response(ValueError("Malformed workflow identifier"))
         mmif_fname = None
@@ -179,8 +127,34 @@ def upload_error_response(e):
 
 @bp.post(f"{API_PREFIX}/download")
 def download_mmif():
+    # TODO (krim @ 2025-12-17): need to update this after https://github.com/clamsproject/aapb-brandeis-datahousing/issues/34 is resolved
+    """
+    request payload format:
+
+    {
+        "workflow": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },
+        "guid": "NON-EXISTING GUID"
+    }
+    or
+    {
+        "workflow": { "whisper-wrapper/v3": {"modelSize": "tiny"} },
+        "guid": ["cpb-aacip-507-154dn40c26", "cpb-aacip-507-v40js9j432", "NO-SUCH-GUID"]
+    }
+    {"workflow": {"swt-detection/v2.0-38-g7838415": {"pretty": "True"}}}
+
+    """
     data = json.loads(request.data.decode('utf-8'))
-    wfid = generate_workflow_identifier(data)
+    # build workflow storage path from request JSON
+    # e.g. {"workflow": {"swt-detection/v2.0": {"pretty": "True"}}}
+    # becomes "swt-detection/v2.0/paramhash"
+    wfid_segments = []
+    for clams_app, params in data["workflow"].items():
+        wfid_segments.append(clams_app)
+        try:
+            wfid_segments.append(generate_param_hash(params))
+        except AttributeError:
+            wfid_segments.append(generate_param_hash({}))
+    wfid = '/'.join(wfid_segments)
     # get number of views for rewind if necessary
     num_views = len(data.get('workflow', []))
     guid = data.get('guid')
