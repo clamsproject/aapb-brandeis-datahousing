@@ -2,5 +2,5 @@ flask==2.*
 python-dotenv==1.*
 flask-dotenv
 gunicorn
-clams_python
+mmif-python>=1.3.0
 clams_utils

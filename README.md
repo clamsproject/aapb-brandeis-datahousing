@@ -54,19 +54,19 @@ In the first case you get a warning if a file was already uploaded, in the secon
 
 **Downloading MMIF files**
 
-This uses the `storeapi/download` route. There are three modes. In the zero-GUID mode you just hand in a pipeline specification and the server returns the server path and all files at that path:
+This uses the `storeapi/download` route. There are three modes. In the zero-GUID mode you just hand in a workflow specification and the server returns the server path and all files at that path:
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {"swt-detection/v2.0-38-g7838415": {"pretty": "True"}}}'
+    -d '{"workflow": {"swt-detection/v2.0-38-g7838415": {"pretty": "True"}}}'
 ```
 ```json
 {
   "filenames": [
     "cpb-aacip-690722078b2"
   ],
-  "pipeline": "/Users/Shared/aapb/storage-test/swt-detection/v2.0-38-g7838415/5fe49d06725497b274b6eaaf0fe0c5d2"
+  "workflow": "/Users/Shared/aapb/storage-test/swt-detection/v2.0-38-g7838415/5fe49d06725497b274b6eaaf0fe0c5d2"
 }
 ```
 
@@ -77,7 +77,7 @@ curl -X POST 127.0.0.1:8001/storeapi/download
     -H 'Content-Type: "application/json"'
     -d '
     {
-        "pipeline": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },
+        "workflow": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },
         "guid": "NON-EXISTING GUID"
     }'
 ```
@@ -94,13 +94,13 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/zip"' \
     -d '
     {
-        "pipeline": { "whisper-wrapper/v3": {"modelSize": "tiny"} },
+        "workflow": { "whisper-wrapper/v3": {"modelSize": "tiny"} },
         "guid": ["cpb-aacip-507-154dn40c26", "cpb-aacip-507-v40js9j432", "NO-SUCH-GUID"]
     }' \
     --output mmif_zip.zip
 ```
 
-The zipfile returned has the MMIF files for each GUID, in addition it has an error log with notifications on which files could not be retrieved and a file with the pipeline path from the server.
+The zipfile returned has the MMIF files for each GUID, in addition it has an error log with notifications on which files could not be retrieved and a file with the workflow path from the server.
 
 
 **MMIF storage analytics**
@@ -111,7 +111,7 @@ To retrieve information on the status of data in the MMIF storage directory, use
 curl -X GET 127.0.0.1:8001/storeapi/status
 ```
 
-This returns a dictionary with information on the full pipeline, e.g.:
+This returns a dictionary with information on the full workflow, e.g.:
 
 ```json
 {
