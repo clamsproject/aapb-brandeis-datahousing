@@ -9,9 +9,9 @@ dependencies = [
     "dotenv>=0.9.9",
     "flask==2.*",
     "inspector-mv",
-    "mmif-python",
+    "mmif-python>=1.3.0",
 ]
 
 [tool.uv.sources]
-mmif-python = { path = "packages/mmif_python-1.2.2.tar.gz" }
+#mmif-python = { path = "packages/mmif_python-1.2.2.tar.gz" }
 inspector-mv = { path = "packages/inspector_mv-0.0.3.tar.gz" }

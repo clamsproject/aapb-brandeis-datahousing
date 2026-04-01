@@ -51,7 +51,7 @@ def upload_mmif():
         if doc_id is None:
             return upload_error_response(ValueError("No document with identifier found in MMIF"))
         guid = guidhandler.get_aapb_guid_from(mmif[doc_id].location)
-        cur_root = Path(STORAGE_DIRECTORY)
+        cur_root = Path(STORAGE_DIR)
 
         wfid, param_dicts = generate_workflow_identifier(
             mmif, return_param_dicts=True)
@@ -287,7 +287,7 @@ def storage_analytics():
         #    print("dirs:", dirs)
         #    print("files:", files)
 
-        curr_workflow = root[root.index(STORAGE_DIRECTORY) + len(STORAGE_DIRECTORY):]
+        curr_workflow = root[root.index(STORAGE_DIR) + len(STORAGE_DIR):]
         curr_workflow = curr_workflow.lstrip('/')
 
         json_list = [f for f in files if re.search(r'\.json$', f)]

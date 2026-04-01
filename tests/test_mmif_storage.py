@@ -113,8 +113,8 @@ def create_app_for_testing(storage_dir):
     os.environ['STORAGE_DIR'] = storage_dir
     os.environ['BUILD_DB'] = '0'
     import api
-    # patch the module-level STORAGE_DIRECTORY which is set at import time
-    api.STORAGE_DIRECTORY = storage_dir
+    # patch the module-level STORAGE_DIR which is set at import time
+    api.STORAGE_DIR = storage_dir
     from api import create_app
     app = create_app(build_db=False)
     app.config['TESTING'] = True
@@ -129,7 +129,7 @@ class TestUpload(unittest.TestCase):
         self.client = self.app.test_client()
         # also patch the imported reference in mmif_storage
         self._patcher = mock.patch(
-            'api.mmif_storage.STORAGE_DIRECTORY', self.tmpdir)
+            'api.mmif_storage.STORAGE_DIR', self.tmpdir)
         self._patcher.start()
 
     def tearDown(self):
@@ -215,7 +215,7 @@ class TestDownload(unittest.TestCase):
         self.app = create_app_for_testing(self.tmpdir)
         self.client = self.app.test_client()
         self._patcher = mock.patch(
-            'api.mmif_storage.STORAGE_DIRECTORY', self.tmpdir)
+            'api.mmif_storage.STORAGE_DIR', self.tmpdir)
         self._patcher.start()
 
     def tearDown(self):
@@ -306,7 +306,7 @@ class TestUploadDownloadConsistency(unittest.TestCase):
         self.app = create_app_for_testing(self.tmpdir)
         self.client = self.app.test_client()
         self._patcher = mock.patch(
-            'api.mmif_storage.STORAGE_DIRECTORY', self.tmpdir)
+            'api.mmif_storage.STORAGE_DIR', self.tmpdir)
         self._patcher.start()
 
     def tearDown(self):

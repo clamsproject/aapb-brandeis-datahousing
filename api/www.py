@@ -21,8 +21,10 @@ from inspector.config import CAPTIONS_PAGE, ENTITIES_PAGE
 
 from api import search_assets
 from api.mmif_storage import StorageServerError
-from api.mmif_storage import path_from_pipeline_specs, get_mmif_for_guid, storage_analytics
+#from api.mmif_storage import path_from_pipeline_specs
+from api.mmif_storage import get_mmif_for_guid, storage_analytics
 from api.utils import strip_prefix, ServerDirectory, MmifFile, ParameterFile
+from api.utils import hash_from_dictionary
 
 
 load_dotenv()
@@ -36,6 +38,24 @@ DEBUG = True
 
 ASSET_DIR = os.environ.get('ASSET_DIR')
 STORAGE_DIR = os.environ.get('STORAGE_DIR')
+
+
+# TODO: this is a patch to make this works with the recent merge from feature
+# branch pipeline_id-gen-on-sdk, should be replaced with an appropriate helper
+# from the mmif.utils package.
+def path_from_pipeline_specs(pipeline_spec: dict):
+    """
+    Helper method to read in a json object containing the names of the pipelined
+    apps and their parameters, and then builds a path out of the pipelined apps
+    and hashed parameters.
+    """
+    pipeline_path = ""
+    for clams_app in pipeline_spec["pipeline"]:
+        # TODO: should probably use pathlib.Path
+        param_hash = hash_from_dictionary(pipeline_spec["pipeline"][clams_app])
+        pipeline_path += f"/{clams_app}/{param_hash}"
+    # removing first "/" so it doesn't mess with os.path.join later
+    return pipeline_path[1:]
 
 
 @bp.get('/www/')
@@ -170,7 +190,7 @@ def display_inspector_page(page_name: str) -> str:
 def analytics():
     analytics = json.loads(storage_analytics().data)
     properties = {p: analytics[p] for p in analytics.keys() if p != 'pipelines'}
-    pipelines = sorted(analytics['pipelines'], key=itemgetter('path'))
+    pipelines = sorted(analytics['workflows'], key=itemgetter('path'))
     for pl in pipelines:
         pl['full_path'] = Path(STORAGE_DIR) / pl['path']
     return render_template(
