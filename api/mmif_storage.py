@@ -1,21 +1,24 @@
-import hashlib
-import json
-import re
-import os
 import io
-import logging
+import json
+import os
+import re
 import zipfile as zf
 from pathlib import Path
+from typing import Union
 from zipfile import ZIP_DEFLATED
 
+from clams_utils.aapb import guidhandler
 from flask import request, jsonify, Blueprint, current_app, send_file
+from mmif import Mmif
+from mmif import utils
+from mmif.utils.workflow_helper import generate_param_hash
+from mmif.utils.workflow_helper import generate_workflow_identifier
 
 from mmif import utils, Mmif, View
 from clams_utils.aapb import guidhandler
 
 from api import STORAGE_DIR
 from api.utils import hash_from_dictionary
-
 
 # make blueprint of app to be used in __init__.py
 bp = Blueprint(__file__.split(os.sep)[-1].split('.')[0].replace('_', '-'), __name__)
@@ -28,26 +31,12 @@ class StorageServerError(Exception):
     pass
 
 
-def split_appname_appversion(long_app_id):
-    """
-    Helper method for splitting the app name and version number from a string. This
-    assumes the long identifier looks like "uri://APP_DOMAIN/APP_NAME/APP_VERSION"
-    """
-    app_path = Path(long_app_id).parts
-    app_name = app_path[2] if len(app_path) > 2 else None
-    app_version = app_path[3] if len(app_path) > 3 else None
-    if app_version is not None and app_name.endswith(app_version):
-        app_name = app_name[:-len(app_version) - 1]
-    if app_version == 'unresolvable':
-        app_version = None
-    return app_name, app_version
-
-
 def identifier_of_first_document(mmif_file: Mmif):
     for doc in mmif_file.documents:
         if doc.id:
             return doc.id
     return None
+
 
 
 @bp.post(f"{API_PREFIX}/upload")
@@ -57,32 +46,28 @@ def upload_mmif():
         overwrite = request.args.get('overwrite')
         overwrite = True if overwrite in ('1', 't', 'true', 'True') else False
         mmif = Mmif(body)
-        # TODO (krim @ 3/21/25): hardcoding of document id might be a bad idea,
-        # fix this after https://github.com/clamsproject/mmif-python/pull/304 is merged
-        # NOTE (marc @ 4/15/25): I had examples where the identifier was not 'd1' so I got 
-        # rid of the hard-wired doc id with the hack below awaiting the merge above
-        identifier = identifier_of_first_document(mmif)
-        guid = guidhandler.get_aapb_guid_from(mmif[identifier].location)
-        cur_root = Path(STORAGE_DIR)
-        last_suffix = None
+        # Assuming the first document is the "main" one that has the AAPB GUID
+        doc_id = identifier_of_first_document(mmif)
+        if doc_id is None:
+            return upload_error_response(ValueError("No document with identifier found in MMIF"))
+        guid = guidhandler.get_aapb_guid_from(mmif[doc_id].location)
+        cur_root = Path(STORAGE_DIRECTORY)
+
+        wfid, param_dicts = generate_workflow_identifier(
+            mmif, return_param_dicts=True)
+        # wf_id syntax is app1name/app1version/app1paramhash/app2name/...
+        segments = wfid.split('/')
+        if len(segments) % 3 != 0:
+            return upload_error_response(ValueError("Malformed workflow identifier"))
         mmif_fname = None
-        for view in mmif.views:
-            if not view.annotations and view.metadata.warnings:
-                # skip "warning" views
-                continue
-            param_dict, param_hash = parse_parameters(view)
-            appn, appv = split_appname_appversion(view.metadata.app)
-            if appv is None:
-                return upload_no_version_response(appn)
-            # TODO (krim @ 3/21/25): we might want "sanitize" appn and appv to make sure
-            # they are valid directory names
-            cur_suffix = Path(appn) / appv / param_hash
-            if cur_suffix != last_suffix:
-                cur_root = cur_root / cur_suffix
-                last_suffix = cur_suffix
+        for i in range(0, len(segments), 3):
+            appn = segments[i]
+            appv = segments[i + 1]
+            param_hash = segments[i + 2]
+            cur_root = cur_root / Path(appn) / appv / param_hash
             cur_root.mkdir(parents=True, exist_ok=True)
-            with open(cur_root.parent / f'{param_hash}.json', 'w') as f:
-                json.dump(param_dict, f, indent=2)
+            with open(cur_root.with_suffix('.json'), 'w') as f:
+                json.dump(param_dicts[i // 3], f, indent=2)
             mmif_fname = cur_root / f'{guid}.mmif'
         if not mmif_fname:
             return upload_no_views_response(mmif_fname)
@@ -143,90 +128,77 @@ def upload_error_response(e):
 
 @bp.post(f"{API_PREFIX}/download")
 def download_mmif():
+    # TODO (krim @ 2025-12-17): need to update this after https://github.com/clamsproject/aapb-brandeis-datahousing/issues/34 is resolved
+    """
+    request payload format:
+
+    {
+        "workflow": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },
+        "guid": "NON-EXISTING GUID"
+    }
+    or
+    {
+        "workflow": { "whisper-wrapper/v3": {"modelSize": "tiny"} },
+        "guid": ["cpb-aacip-507-154dn40c26", "cpb-aacip-507-v40js9j432", "NO-SUCH-GUID"]
+    }
+    {"workflow": {"swt-detection/v2.0-38-g7838415": {"pretty": "True"}}}
+
+    """
     data = json.loads(request.data.decode('utf-8'))
-    #print(data)
-    #print('>>> type of data:', type(data))
-    #print('>>> type of pipeline:', type(data['pipeline']))
-    # get guid and pipeline from POST data, and process pipeline using helper method
+    # build workflow storage path from request JSON
+    # e.g. {"workflow": {"swt-detection/v2.0": {"pretty": "True"}}}
+    # becomes "swt-detection/v2.0/paramhash"
+    wfid_segments = []
+    for clams_app, params in data["workflow"].items():
+        wfid_segments.append(clams_app)
+        try:
+            wfid_segments.append(generate_param_hash(params))
+        except AttributeError:
+            wfid_segments.append(generate_param_hash({}))
+    wfid = '/'.join(wfid_segments)
+    # get number of views for rewind if necessary
+    num_views = len(data.get('workflow', []))
     guid = data.get('guid')
-    pipeline = path_from_pipeline_specs(data)
-    # number of apps for rewind if necessary
-    num_apps = len(data.get('pipeline', {}))
-    # validate existence of pipeline, the guid is optional
-    if not pipeline:
-        return jsonify({'error': 'Missing required parameters: need at least a pipeline'})
-    # create full absolute pipeline path using the STORAGE_DIR environment variable
-    full_pipeline_path = os.path.join(os.environ.get('STORAGE_DIR'), pipeline)
+    # validate existence of workflow, guid is not necessary if you just want the workflow returned
+    if not wfid:
+        return jsonify({'error': 'Missing required parameters: need at least a workflow'})
+    # load environment variables to concat workflow with local storage path
+    directory = os.environ.get('STORAGE_DIR')
+    wfid = os.path.join(directory, wfid)
     if not guid:
-        return zero_guid_download_response(full_pipeline_path)
+        return zero_guid_download_response(wfid)
     # Checking if the GUID is a single value or a list
     if not isinstance(guid, list):
-        return single_guid_download_response(full_pipeline_path, guid, num_apps)
+        return single_guid_download_response(wfid, guid, num_views)
     else:
-        return multi_guid_download_response(full_pipeline_path, guid, num_apps)
-
-def parse_parameters(view):
-    """
-    Convert the parameter dictionary to a string and then hash it, this hash will be
-    the name of another subdirectory of the path. Return the dictionary and the hash.
-    """
-    try:
-        param_dict = view.metadata.parameters
-        # param_dict = {k: v.replace("'", '\"') for k, v in param_dict.items()}
-        # print(param_dict)
-        param_list = ['='.join(pair) for pair in param_dict.items()]
-        param_list.sort()
-        param_string = ','.join(param_list)
-    except KeyError:
-        param_dict = ""
-        param_string = ""
-    # hash the (sorted and concatenated list of params) string and join with path
-    # NOTE: this is *not* for security purposes, so the usage of md5 is not an issue.
-    param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
-    return param_dict, param_hash
+        return multi_guid_download_response(wfid, guid, num_views)
 
 
-def path_from_pipeline_specs(pipeline_spec: dict):
+def zero_guid_download_response(workflow_id: Union[str, Path]):
     """
-    Helper method to read in a json object containing the names of the pipelined
-    apps and their parameters, and then builds a path out of the pipelined apps
-    and hashed parameters.
-    """
-    pipeline_path = ""
-    for clams_app in pipeline_spec["pipeline"]:
-        # TODO: should probably use pathlib.Path
-        param_hash = hash_from_dictionary(pipeline_spec["pipeline"][clams_app])
-        pipeline_path += f"/{clams_app}/{param_hash}"
-    # removing first "/" so it doesn't mess with os.path.join later
-    return pipeline_path[1:]
-
-
-def zero_guid_download_response(pipeline: str):
-    """
-    For a "zero-guid" request, the user will receive just the local storage pipeline
+    For a "zero-guid" request, the user will receive just the local storage workflow
     and the list of files found there. This allows clients to utilize the api without
     downloading files (for working with local files).
     """
-    filenames = [p.stem for p in Path(pipeline).glob('*')]
-    print(filenames)
-    return jsonify({'pipeline': pipeline, 'filenames': filenames})
+    filenames = [p.stem for p in Path(workflow_id).glob('*')]
+    return jsonify({'workflow': workflow_id, 'filenames': filenames})
 
 
-def single_guid_download_response(pipeline: str, guid: str, num_views: int):
+def single_guid_download_response(workflow_id: str, guid: str, num_views: int):
     """
-    When retrieving the MMIF object for a pipeline and a single GUID, just return
+    When retrieving the MMIF object for a workflow and a single GUID, just return
     the MMIF object or an error if the search failed.
     """
     try:
-        mmif = get_mmif_for_guid(pipeline, guid, num_views)
+        mmif = get_mmif_for_guid(workflow_id, guid, num_views)
         return mmif
     except StorageServerError as e:
         return {"error": str(e)}, 201
 
 
-def multi_guid_download_response(pipeline: str, guids: list, num_views: int):
+def multi_guid_download_response(workflow_id: str, guids: list, num_views: int):
     """
-    When retrieving multiple MMIFs for a pipeline, we construct a json object to
+    When retrieving multiple MMIFs for a workflow, we construct a json object to
     store each guid as a key and each MMIF as the value.
     """
     errors = dict()
@@ -234,14 +206,14 @@ def multi_guid_download_response(pipeline: str, guids: list, num_views: int):
     with zf.ZipFile(mem_file, 'w', ZIP_DEFLATED) as mmif_zip:
         for guid in guids:
             try:
-                # mmif = get_mmif_for_guid(pipeline, guid, num_views)
+                # mmif = get_mmif_for_guid(workflow, guid, num_views)
                 # instead of using get_mmif_for_guid and needing to re-dump mmif
                 mmif_name = guid + ".mmif"
-                path = os.path.join(pipeline, mmif_name)
+                path = os.path.join(workflow_id, mmif_name)
                 mmif_zip.write(filename=path, arcname=f'multi-guid-response/files/{mmif_name}')
             except FileNotFoundError:
                 errors[guid] = {"Error": f"Did not find {guid}"}
-        mmif_zip.writestr(zinfo_or_arcname="multi-guid-response/pipeline_path.txt", data=pipeline)
+        mmif_zip.writestr(zinfo_or_arcname="multi-guid-response/workflow_path.txt", data=workflow_id)
         error_dump = json.dumps(errors, indent=2)
         mmif_zip.writestr(zinfo_or_arcname="multi-guid-response/errors.json", data=error_dump)
     mem_file.seek(0)
@@ -254,37 +226,37 @@ def multi_guid_download_response(pipeline: str, guids: list, num_views: int):
         download_name='multi-guid-response.zip')
 
 
-def get_mmif_for_guid(pipeline: str, guid: str, num_views: int):
+def get_mmif_for_guid(workflow_id: str, guid: str, num_views: int):
     """
-    Retrieve the MMIF file for a pipeline and GUID. If none was found raise a
+    Retrieve the MMIF file for a workflow and GUID. If none was found raise a
     StorageServerError.
     """
     guid = guid + ".mmif"
-    path = os.path.join(pipeline, guid)
+    path = os.path.join(workflow_id, guid)
     # if filepath exists, we can return it
     try:
         with open(path, 'r') as file:
             mmif = json.loads(file.read())
         return mmif
     # otherwise we will use the rewinder to check if the user provided a prefix of a
-    # mmif pipeline that we have previously stored
+    # mmif workflow that we have previously stored
     except FileNotFoundError:
         try:
-            return rewind_time(pipeline, guid, num_views)
+            return rewind_time(workflow_id, guid, num_views)
         except FileNotFoundError:
             # the rewinder does not always succeed so we catch this exception again
             # and raise an application-specific exception
             raise StorageServerError(f'Did not find: {guid.split(".")[0]}')
 
 
-def rewind_time(pipeline, guid, num_views):
+def rewind_time(workflow_id, guid, num_views):
     """
-    This method takes in a pipeline (path), a guid, and a number of views, and uses
-    os.walk to iterate through directories that begin with that pipeline. It takes
+    This method takes in a workflow (path), a guid, and a number of views, and uses
+    os.walk to iterate through directories that begin with that workflow. It takes
     the first mmif file that matches the guid and uses the rewind feature to include
-    only the views indicated by the pipeline.
+    only the views indicated by the workflow.
     """
-    for home, dirs, files in os.walk(pipeline):
+    for home, dirs, files in os.walk(workflow_id):
         # find mmif with matching guid to rewind
         for file in files:
             if guid == file:
@@ -301,12 +273,12 @@ def rewind_time(pipeline, guid, num_views):
 def storage_analytics():
     """
     Provide analytics and status information about the current MMIF storage system.
-    This method returns info on the total number of MMIF files, number of unique pipelines,
-    app parameters, non-terminal MMIFs, and dirty pipeline MMIFs.
+    This method returns info on the total number of MMIF files, number of unique workflow,
+    app parameters, non-terminal MMIFs, and dirty workflow MMIFs.
     """
-    # TODO (ledibr @ 10/12/25): consider adding params to show/hide certain parts e.g. full pipeline specs?
-    response = {"total_mmif_files": 0, "total_pipelines": 0, "pipelines": [],
-                "non_terminal_mmif_count": 0, "dirty_pipeline_mmif_count": 0}
+    # TODO (ledibr @ 10/12/25): consider adding params to show/hide certain parts e.g. full workflow specs?
+    response = {"total_mmif_files": 0, "total_workflows": 0, "workflows": [],
+                "non_terminal_mmif_count": 0, "dirty_workflow_mmif_count": 0}
     app_specs = {}
 
     for root, dirs, files in os.walk(STORAGE_DIR):
@@ -315,14 +287,14 @@ def storage_analytics():
         #    print("dirs:", dirs)
         #    print("files:", files)
 
-        curr_pipeline = root[root.index(STORAGE_DIR) + len(STORAGE_DIR):]
-        curr_pipeline = curr_pipeline.lstrip('/')
+        curr_workflow = root[root.index(STORAGE_DIRECTORY) + len(STORAGE_DIRECTORY):]
+        curr_workflow = curr_workflow.lstrip('/')
 
         json_list = [f for f in files if re.search(r'\.json$', f)]
         for subdir in dirs:
             config = subdir + '.json'
             if config in json_list:
-                curr_app = curr_pipeline[curr_pipeline.rfind('/', 0, curr_pipeline.rfind('/'))+1:]
+                curr_app = curr_workflow[curr_workflow.rfind('/', 0, curr_workflow.rfind('/'))+1:]
                 full_path = os.path.join(curr_app, subdir)
                 with open(os.path.join(root, config), 'r') as f:
                     app_specs[full_path] = json.load(f)
@@ -331,18 +303,18 @@ def storage_analytics():
         mmif_list = [f for f in files if re.search(r'\.mmif$', f)]
         if mmif_list:
             response["total_mmif_files"] += len(mmif_list)
-            response["total_pipelines"] += 1
+            response["total_workflows"] += 1
 
-            pipeline_stats = {"path": curr_pipeline, "spec": {}, "mmif_count": len(mmif_list)}
-            segments = curr_pipeline.split("/")
+            workflow_stats = {"path": curr_workflow, "spec": {}, "mmif_count": len(mmif_list)}
+            segments = curr_workflow.split("/")
             curr_apps = ["/".join(segments[i:i + 3]) for i in range(0, len(segments), 3)]
             for i, app in enumerate(curr_apps):
                 if app in app_specs:
-                    pipeline_stats["spec"][app] = app_specs[app]
-            response["pipelines"].append(pipeline_stats)
+                    workflow_stats["spec"][app] = app_specs[app]
+            response["workflows"].append(workflow_stats)
 
-            if re.search(r'-dirty', curr_pipeline):
-                response["dirty_pipeline_mmif_count"] += len(mmif_list)
+            if re.search(r'-dirty', curr_workflow):
+                response["dirty_workflow_mmif_count"] += len(mmif_list)
             if dirs:
                 response["non_terminal_mmif_count"] += len(mmif_list)
     # TODO (ledibr @ 10/27/25): the response seems to be in alphabetical key order, not chronological.
