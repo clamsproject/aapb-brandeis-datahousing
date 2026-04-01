@@ -1,0 +1,65 @@
+<!doctype html>
+
+<head>
+</head>
+
+<body>
+
+<h2>Storage Server Browser &mdash; Assets</h2>
+
+<p>
+  [ <a href='index.html'>Home</a>
+  | <a href="search_assets.html">Search assets</a>
+  | <a href="search_mmif.html">Search MMIF files</a>
+  | <a href="browse_paths.html">Browse paths</a>
+  | <a href="analytics.html">Storage analytics</a>
+  ]
+</p>
+
+<h4>Search</h4>
+<blockquote>
+<form method=post>
+    <table cellpadding="8" cellspacing="0" border="1">
+        <tr>
+            <td>search term (matching the GUID)</td>
+            <td><input type="text" name="searchterm" value='{{term}}'></td>
+        </tr>
+        <tr>
+            <td>file types (whitespace separated)</td>
+            <td><input type="text" name="filetypes" value='{{" ".join(types)}}'></td>
+        </tr>
+        <!--
+        <tr valign="top">
+            <td>first only</td>
+            <td>
+                <input type="radio" name="firstonly" value="yes">
+                <label for="visa">yes</label>
+                <input type="radio" name="firstonly" value="no" checked="true">
+                <label for="visa">no</label>
+        </tr>
+        -->
+    </table>
+    <p><input type="submit"></p>
+</form>
+</blockquote>
+
+<h4>Results</h3>
+
+<blockquote>
+
+<p>TOTAL HITS: {{ paths.__len__() }}</p>
+
+<table cellpadding="8" cellspacing="0" border="1">
+{% for n, path in paths %}
+    <tr>
+        <td align="right">{{ n + 1 }}</td>
+        <td>{{ path }}</td>
+    </tr>
+{% endfor %}
+</table>
+
+</blockquote>
+
+</body>
+
+</html>

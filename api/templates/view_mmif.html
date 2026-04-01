@@ -1,0 +1,140 @@
+<!doctype html>
+
+<head>
+    <title>Storage Server - MMIF File</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prism.css') }}">
+    <meta charset="UTF-8">
+    <!-- Using https://caldwell.github.io/renderjson/ -->
+    <script type="text/javascript" src="{{ url_for('static', filename='js/renderjson.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/renderjson.css') }}">
+</head>
+
+<body>
+
+{% set path = mfile.path %}
+
+<h2>Storage Server &mdash; MMIF File</h2>
+
+<p>
+  [ <a href='index.html'>Home</a>
+  | <a href="search_assets.html">Search assets</a>
+  | <a href="search_mmif.html">Search MMIF files</a>
+  | <a href="browse_paths.html">Browse paths</a>
+  | <a href="analytics.html">Storage analytics</a>
+  ]
+</p>
+
+
+<h4>{{ path.name }}</h4>
+
+<table cellpadding="8" cellspacing="0" border="1">
+    <tr>
+        <td>path to file</td>
+        <td><a href="browse_paths.html?path={{ path.parent }}">{{ path.parent.name }}</a></td>
+    </tr>
+    <tr>
+        <td>size of file</td>
+        <td>{{ "{:,}".format(mfile.mmif_size()) }}</td>
+    </tr>
+</table>
+
+<p/>
+
+<table>
+    <tr>
+        <td>
+            <form action="">
+                <input type="submit" name="open" value="Parameters">
+                <input type="text" hidden="true" name="path" value="{{path}}">
+                <input type="text" hidden="true" name="mode" value="parameters">
+            </form>
+        </td>
+        <td>&nbsp;</td>
+        <td>
+            <form action="">
+                <input type="submit" name="open" value="Full MMIF">
+                <input type="text" hidden="true" name="path" value="{{path}}">
+                <input type="text" hidden="true" name="mode" value="mmif">
+            </form>
+        </td>
+        <td>&nbsp;</td>
+        <td>
+            <form action="">
+                <input type="submit" name="open" value="Describe">
+                <input type="text" hidden="true" name="path" value="{{path}}">
+                <input type="text" hidden="true" name="mode" value="description">
+            </form>
+        </td>
+        <td>&nbsp;</td>
+        <td>
+            <form action="">
+                <input type="submit" name="open" value="Summary">
+                <input type="text" hidden="true" name="path" value="{{path}}">
+                <input type="text" hidden="true" name="mode" value="summary">
+            </form>
+        </td>
+        <td>&nbsp;</td>
+        <td>
+            <form action="">
+                <input type="submit" name="open" value="Collapsible Summary">
+                <input type="text" hidden="true" name="path" value="{{path}}">
+                <input type="text" hidden="true" name="mode" value="collapsible">
+            </form>
+        </td>
+    </tr>
+</table>
+
+{% if mode == 'parameters' %}
+
+<h4>Parameters</h4>
+{% for app, parameters in mfile.parameters() %}
+<p>{{ app }}</p>
+<blockquote>
+    <pre><code class="language-json">{{ parameters }}</code></pre>
+</blockquote>
+{% endfor %}
+
+{% elif mode == 'mmif' %}
+
+<h4>MMIF File</h4>
+<blockquote>
+    <pre><code class="language-json">{{ mfile.mmif_content() }}</code></pre>
+</blockquote>
+
+{% elif mode == 'description' %}
+
+<h4>MMIF File Description</h4>
+<blockquote>
+    <pre><code class="language-json">{{ mfile.description_content() }}</code></pre>
+</blockquote>
+
+{% elif mode == 'summary' %}
+
+<h4>Summary</h4>
+<blockquote>
+    <a href="inspector/index.html?path={{path}}">Open inspector</a><br/><br/>
+    <pre><code class="language-json">size = {{ "{:,}".format(mfile.summary_size()) }}</code></pre>
+    <pre><code class="language-json">{{ mfile.summary_content() }}</code></pre>
+</blockquote>
+
+{% elif mode == 'collapsible' %}
+
+<h4>Collapsible Summary</h4>
+<blockquote>
+    <a href="inspector/index.html?path={{path}}">Open inspector</a><br/><br/>
+    <pre><code class="language-json">size = {{ "{:,}".format(mfile.summary_size()) }}</code></pre>
+    <div id="mmif"></div>
+</blockquote>
+<script>
+renderjson.set_show_to_level(2);
+var mmif = {{ mfile.summary_content() | safe }};
+document.getElementById("mmif").appendChild(renderjson(mmif));
+</script>
+
+{% endif %}
+
+<script src="{{ url_for('static', filename='js/prism.js') }}"></script>
+
+</body>
+
+</html>

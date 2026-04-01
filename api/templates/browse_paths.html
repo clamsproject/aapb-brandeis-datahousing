@@ -1,0 +1,49 @@
+<!doctype html>
+
+<head>
+    <title>Storage Server - Navigate</title>
+    <meta charset="UTF-8">
+</head>
+
+<body>
+
+<h2>Storage Server Browser &mdash; Navigate</h2>
+
+<p>
+  [ <a href='index.html'>Home</a>
+  | <a href="search_assets.html">Search assets</a>
+  | <a href="search_mmif.html">Search MMIF files</a>
+  | <a href="browse_paths.html">Browse paths</a>
+  | <a href="analytics.html">Storage analytics</a>
+  ]
+</p>
+
+<h4>{{ sdir.path_for_display() }}</h4>
+
+{% set directories = sdir.directories() %}
+{% set files = sdir.files() %}
+
+{% if directories %}
+<p>Directories</p>
+<ul>
+{% for d in directories %}
+<li><a href=browse_paths.html?path={{d}}>{{d.name}}</a></li>
+{% endfor %}
+</ul>
+{% endif %}
+
+{% if files %}
+<p>Files</p>
+<ul>
+{% for f in files %}
+{% if f.suffix == '.json' %}
+<li><a href=view_parameters.html?path={{f}}>{{f.name}}</a></li>
+{% elif f.suffix == '.mmif' %}
+<li><a href=view_mmif.html?&mode=parameters&path={{f}}>{{f.name}}</a></li>
+{% endif %}
+{% endfor %}
+</ul>
+{% endif %}
+
+</body>
+</html>

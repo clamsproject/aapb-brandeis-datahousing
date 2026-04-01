@@ -1,6 +1,6 @@
 # AAPB-Brandeis datahousing server
 
-Codebase for the datahousing server deployed on Brandeis-LLC site as a part of [CLAMS Project](https://www.clams.ai). 
+Codebase for the datahousing server deployed on the Brandeis-LLC site as a part of the [CLAMS Project](https://www.clams.ai). 
 
 At the moment, the server is used to resolve AAPB GUIDs to local file paths, and works with the accompanying client, [`mmif-docloc-baapb`](https://github.com/clamsproject/mmif-docloc-baapb) MMIF plugin.
 
@@ -23,8 +23,8 @@ There are API routes for (1) searching the assets (typically videos, audio strea
 
 To query available assets use the `searchapi` route with these three query string parameters:
 
-* `guid` (required) — part of the AAPB GUID to search for (min. 3 characters)
-* `file` — the type of the file to search for: up to three of `text`, `image`, `audio`, `video`, `markup` and `other`
+* `guid` — part of the AAPB GUID to search for (min. 3 characters), required parameter
+* `file` — the type of the file to search for: any number of `text`, `image`, `audio`, `video`, `markup` and `other`, default is to search for all types
 * `onlyfirst` — when used only the first match will be returned, default is false
 
 Examples (these use URLs as if you have deployed your own server (see below)):
@@ -37,7 +37,7 @@ curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video&file=other'
 curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&onlyfirst=true'
 ```
 
-These return a message if no file was found, a list of server paths or a single path (if onlyfirst was used).
+These return a message if no file was found, a list of server paths or a single path (if onlyfirst was used). Note that searches for short strings that occur in many GUIDs may take a few seconds.
 
 
 **Uploading MMIF files**
@@ -64,13 +64,19 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
 ```json
 {
   "filenames": [
-    "cpb-aacip-690722078b2"
+    "cpb-aacip-259-wh2dcb8p",
+    "cpb-aacip-c72fd5cbadc",
+    "cpb-aacip-259-4j09zf95",
+    "cpb-aacip-516-8c9r20sq57",
+    "cpb-aacip-259-5717pw8g"
   ],
   "workflow": "/Users/Shared/aapb/storage-test/swt-detection/v2.0-38-g7838415/5fe49d06725497b274b6eaaf0fe0c5d2"
 }
 ```
 
-If you add a GUID, then the server will return a MMIF file or a warning if the file did not exist:
+If the pipeline path did not exist on the server, the response will still include a file path, but the list of files will be empty.
+
+For the single-guid mode you add a guid and the server will return a MMIF file or a warning if the file did not exist:
 
 ```bash
 curl -X POST 127.0.0.1:8001/storeapi/download
@@ -163,13 +169,16 @@ This returns a dictionary with information on the full workflow, e.g.:
 
 ### Deploy on your own
 
-Install all the python dependencies with `pip install -r requirements.txt`, and configure your server using `.env` file or via environment variables (See `.env.sample` file for an example).
+Install all the python dependencies with `pip install -r requirements.txt`, and configure your server using a `.env` file or via environment variables (see `.env.sample` for an example configuration file). The following variables need to be defined:
 
 * `FLASK_APP`: must be `api`
 * `FLASK_DEBUG`: set to `1` to enable debug mode, otherwise `0`
 * `FLASK_RUN_PORT`: port number to listen on
 * `FLASK_RUN_HOST`: hostname to listen
 * `ASSET_DIR`: path to the directory on the server where the AAPB media files (assets) are stored
+* `DOWNLOAD_DIR`: currently not in use
+* `STORAGE_DIR`: the directory where MMIF files are stored
 * `BUILD_DB`: set to `1` to build the database from scratch, otherwise `0`
+* `DEVELOPER_MODE`: set to `1`  for developer mode, which adds some routes to the API
 
 Start the server with `flask run`.

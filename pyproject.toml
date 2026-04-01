@@ -1,0 +1,17 @@
+[project]
+name = "aapb-brandeis-datahousing"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "clams-utils>=251011",
+    "dotenv>=0.9.9",
+    "flask==2.*",
+    "inspector-mv",
+    "mmif-python",
+]
+
+[tool.uv.sources]
+mmif-python = { path = "packages/mmif_python-1.2.2.tar.gz" }
+inspector-mv = { path = "packages/inspector_mv-0.0.3.tar.gz" }

@@ -1,0 +1,53 @@
+<!doctype html>
+
+<head>
+    <title>Storage Server - Path Analytics</title>
+    <meta charset="UTF-8">
+</head>
+
+<body>
+
+<h2>Storage Server &mdash; Path Analytics</h2>
+
+<p>
+  [ <a href='index.html'>Home</a>
+  | <a href="search_assets.html">Search assets</a>
+  | <a href="search_mmif.html">Search MMIF files</a>
+  | <a href="browse_paths.html">Browse paths</a>
+  | <a href="analytics.html">Storage analytics</a>
+  ]
+</p>
+
+<p>Statistics</p>
+
+<blockquote>
+<table cellspacing="0" cellpadding="8" border="1">
+{% for prop in properties %}
+<tr>
+  <td>{{prop}}</td>
+  <td align="right">{{properties[prop]}}</td>
+{% endfor %}
+</table>
+</blockquote>
+
+<p>Pipelines</p>
+
+<blockquote>
+<table cellspacing="0" cellpadding="8" border="1">
+{% for pipeline in pipelines %}
+<tr valign="top">
+  <td>{{pipeline['mmif_count']}}</td>
+  <td>
+    <a href="browse_paths.html?path={{pipeline['full_path']}}">{{pipeline['path']}}</a><br/>
+    {% for spec in pipeline['spec'] %}
+    <pre>{{pipeline['spec'][spec]}}</pre>
+    {% endfor %}
+  </td>
+</tr>
+{% endfor %}
+</table>
+</blockquote>
+
+</body>
+
+</html>

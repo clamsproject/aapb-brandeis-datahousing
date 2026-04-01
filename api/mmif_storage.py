@@ -14,13 +14,14 @@ from mmif import utils
 from mmif.utils.workflow_helper import generate_param_hash
 from mmif.utils.workflow_helper import generate_workflow_identifier
 
-from api import STORAGE_DIRECTORY
+from mmif import utils, Mmif, View
+from clams_utils.aapb import guidhandler
+
+from api import STORAGE_DIR
+from api.utils import hash_from_dictionary
 
 # make blueprint of app to be used in __init__.py
 bp = Blueprint(__file__.split(os.sep)[-1].split('.')[0].replace('_', '-'), __name__)
-# get post request from user
-# read mmif inside post request, get view metadata
-# store in nested directory relating to view metadata
 
 
 API_PREFIX = '/storeapi'
@@ -280,11 +281,11 @@ def storage_analytics():
                 "non_terminal_mmif_count": 0, "dirty_workflow_mmif_count": 0}
     app_specs = {}
 
-    for root, dirs, files in os.walk(STORAGE_DIRECTORY):
-        if current_app.config.get('DEBUG'):
-            print("Root:", root)
-            print("dirs:", dirs)
-            print("files:", files)
+    for root, dirs, files in os.walk(STORAGE_DIR):
+        #if current_app.config.get('DEBUG'):
+        #    print("Root:", root)
+        #    print("dirs:", dirs)
+        #    print("files:", files)
 
         curr_workflow = root[root.index(STORAGE_DIRECTORY) + len(STORAGE_DIRECTORY):]
         curr_workflow = curr_workflow.lstrip('/')
