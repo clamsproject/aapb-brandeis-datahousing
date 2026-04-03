@@ -9,7 +9,12 @@ examples/*
 packages/*
 out*
 log*
+tmp*
 *.mmif
+.python-version
+backup.sh
+find.sh
+mmif-storage*.txt
 
 ### Linux ###
 *~

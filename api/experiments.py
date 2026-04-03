@@ -75,13 +75,16 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
 import os, time, copy, json, random
 from flask import request, Blueprint, Response, jsonify, current_app
 from api import utils
-from api import mmif_storage as ms
 
 
-bp = Blueprint(__file__.split(os.sep)[-1].split('.')[0].replace('_', '-'), __name__)
+API_PREFIX = '/experiments'
 
 
-@bp.get(f"{ms.API_PREFIX}/stream")
+bp = Blueprint('experiments', __name__)
+print(f'{bp} import_name={bp.import_name} __name__={__name__}')
+
+
+@bp.get(f"{API_PREFIX}/stream")
 def stream():
     def generate():
         for i in range(10):
@@ -91,7 +94,7 @@ def stream():
 
 # To test a number of large files all handed over at the same time, prints the 
 # memory use of the results object.
-@bp.post(f"{ms.API_PREFIX}/test1")
+@bp.post(f"{API_PREFIX}/test1")
 def test1():
     t0 = time.time()
     data = json.loads(request.data.decode('utf-8'))
@@ -118,7 +121,7 @@ def test1():
 
 
 # To test a number of large files streamed one by one
-@bp.get(f"{ms.API_PREFIX}/test2")
+@bp.get(f"{API_PREFIX}/test2")
 def test2():
     def generate():
         for i in range(10):

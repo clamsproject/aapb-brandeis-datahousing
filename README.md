@@ -113,7 +113,7 @@ The zipfile returned has the MMIF files for each GUID, in addition it has an err
 
 To retrieve information on the status of data in the MMIF storage directory, use the `storeapi/status` route:
 
-```angular2html
+```bash
 curl -X GET 127.0.0.1:8001/storeapi/status
 ```
 

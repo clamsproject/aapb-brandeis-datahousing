@@ -19,10 +19,10 @@ from inspector.config import INDEX_PAGE, CSS_PAGE, JS_PAGE, VIEWS_PAGE
 from inspector.config import TIMEFRAMES_PAGE, CORRELATIONS_PAGE, TRANSCRIPT_PAGE
 from inspector.config import CAPTIONS_PAGE, ENTITIES_PAGE
 
-from api import search_assets
-from api.mmif_storage import StorageServerError
-#from api.mmif_storage import path_from_pipeline_specs
-from api.mmif_storage import get_mmif_for_guid, storage_analytics
+from api.assets import search_assets
+from api.errors import StorageServerError
+from api.mmif_download import get_mmif_for_guid
+from api.analytics import storage_analytics
 from api.utils import strip_prefix, ServerDirectory, MmifFile, ParameterFile
 from api.utils import hash_from_dictionary
 
@@ -31,6 +31,7 @@ load_dotenv()
 
 
 bp = Blueprint('www', __name__, template_folder='templates')
+print(f'{bp} import_name={bp.import_name} __name__={__name__}')
 
 
 DEBUG = True
@@ -46,7 +47,7 @@ STORAGE_DIR = os.environ.get('STORAGE_DIR')
 def path_from_pipeline_specs(pipeline_spec: dict):
     """
     Helper method to read in a json object containing the names of the pipelined
-    apps and their parameters, and then builds a path out of the pipelined apps
+    apps and their parameters, and then build a path out of the pipelined apps
     and hashed parameters.
     """
     pipeline_path = ""
@@ -213,7 +214,7 @@ class InspectorData:
         return json.loads(self.summ_file.read_text())
 
     
-def update_rendered(html: str, css_file: Path, js_file: Path):
+def update_rendered(html: str, css_file: Path, js_file: Path = None):
     """Method to add the stylesheet and javascript that the inspector files need."""
     # TODO: make adding the javascript file optional for some pages
     # TODO: this way of adding path GET variable to subpages is fragile
@@ -222,7 +223,8 @@ def update_rendered(html: str, css_file: Path, js_file: Path):
     for line in html.split('\n'):
         if line == '</head>':
             buffer.write(f'<style>\n{css_file.read_text().strip()}\n</style>\n')
-            buffer.write(f'<script>\n{js_file.read_text().strip()}\n</script>\n')
+            if js_file is not None:
+                buffer.write(f'<script>\n{js_file.read_text().strip()}\n</script>\n')
         elif '[ <a href="views.html">Views</a>' in line:
             buffer.write(f'[ <a href="views.html?path={path}">Views</a>\n')
         elif line == '| <a href="timeframes.html">TimeFrames</a>':
