@@ -16,7 +16,7 @@ DEVELOPER_MODE = bool(int(os.environ.get('DEVELOPER_MODE')))
 
 
 bp = Blueprint('api', __name__)
-print(f'{bp} import_name={bp.import_name} __name__={__name__}')
+#print(f'{bp} import_name={bp.import_name} __name__={__name__}')
 
 
 @bp.get('/')
@@ -26,21 +26,21 @@ def index():
 
 def create_app(build_db=BUILD_DB, developer_mode=DEVELOPER_MODE):
 
-    from api.assets import initialize_database
+    from api.model.database import initialize_database
     initialize_database(build_db)
 
     app = Flask(__name__)
     app.config.from_prefixed_env()
     app.register_blueprint(bp)
 
-    from api.www import bp as www_bp
-    from api.assets import bp as assets_bp
-    from api.analytics import bp as bp_analytics
-    from api.mmif_upload import bp as bp_upload
-    from api.mmif_download import bp as bp_download
+    from api.www import bp as bp_www
+    from api.routes.assets import bp as bp_assets
+    from api.routes.analytics import bp as bp_analytics
+    from api.routes.upload import bp as bp_upload
+    from api.routes.download import bp as bp_download
 
-    app.register_blueprint(www_bp)
-    app.register_blueprint(assets_bp)
+    app.register_blueprint(bp_www)
+    app.register_blueprint(bp_assets)
     app.register_blueprint(bp_analytics)
     app.register_blueprint(bp_upload)
     app.register_blueprint(bp_download)

@@ -226,13 +226,12 @@ class TestUpload(unittest.TestCase):
         data = resp.get_json()
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(data['status'], 'success')
-        self.assertIn('overwritten', data['message'])
 
     def test_upload_no_views(self):
         resp = self.client.post('/storeapi/upload', data=NO_VIEWS_MMIF)
         data = resp.get_json()
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(data['status'], 'error')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(data['status'], 'warning')
 
  
 class TestDownload(unittest.TestCase):

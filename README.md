@@ -79,8 +79,8 @@ If the pipeline path did not exist on the server, the response will still includ
 For the single-guid mode you add a guid and the server will return a MMIF file or a warning if the file did not exist:
 
 ```bash
-curl -X POST 127.0.0.1:8001/storeapi/download
-    -H 'Content-Type: "application/json"'
+curl -X POST 127.0.0.1:8001/storeapi/download \
+    -H 'Content-Type: "application/json"' \
     -d '
     {
         "workflow": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },

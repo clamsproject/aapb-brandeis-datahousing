@@ -1,29 +1,27 @@
+"""
+
+Analyzing the contents of the MMIF storage.
+
+"""
+
 import json
 import os
 import re
 
-from flask import jsonify, Blueprint
-
 from api import STORAGE_DIR
 
 
-bp = Blueprint('analytics', __name__)
-print(f'{bp} module={__name__}')
-
-
-API_PREFIX = '/storeapi'
-
-
-@bp.get(f"{API_PREFIX}/status")
-def storage_analytics():
+def storage_analytics() -> dict:
     """
     Provide analytics and status information about the current MMIF storage system.
     This method returns info on the total number of MMIF files, number of unique
     workflows, app parameters, non-terminal MMIFs, and dirty workflow MMIFs.
     """
+
     # TODO (ledibr @ 10/12/25): consider adding params to show/hide certain parts
     # e.g. full workflow specs?
-    response = {"total_mmif_files": 0, "total_workflows": 0, "workflows": [],
+
+    analytics = {"total_mmif_files": 0, "total_workflows": 0, "workflows": [],
                 "non_terminal_mmif_count": 0, "dirty_workflow_mmif_count": 0}
     app_specs = {}
 
@@ -48,8 +46,8 @@ def storage_analytics():
                     app_specs[full_path] = {}
         mmif_list = [f for f in files if re.search(r'\.mmif$', f)]
         if mmif_list:
-            response["total_mmif_files"] += len(mmif_list)
-            response["total_workflows"] += 1
+            analytics["total_mmif_files"] += len(mmif_list)
+            analytics["total_workflows"] += 1
 
             workflow_stats = {"path": curr_workflow, "spec": {}, "mmif_count": len(mmif_list)}
             segments = curr_workflow.split("/")
@@ -57,12 +55,15 @@ def storage_analytics():
             for i, app in enumerate(curr_apps):
                 if app in app_specs:
                     workflow_stats["spec"][app] = app_specs[app]
-            response["workflows"].append(workflow_stats)
+            analytics["workflows"].append(workflow_stats)
 
             if re.search(r'-dirty', curr_workflow):
-                response["dirty_workflow_mmif_count"] += len(mmif_list)
+                analytics["dirty_workflow_mmif_count"] += len(mmif_list)
             if dirs:
-                response["non_terminal_mmif_count"] += len(mmif_list)
-    # TODO (ledibr @ 10/27/25): the response seems to be in alphabetical key order, not chronological.
-    # given how long these might get, do we want to potentially return this differently?
-    return jsonify(response)
+                analytics["non_terminal_mmif_count"] += len(mmif_list)
+
+    # TODO (ledibr @ 10/27/25): the analytics seem to be in alphabetical key order,
+    # not chronological. given how long these might get, do we want to potentially
+    # return this differently?
+
+    return analytics

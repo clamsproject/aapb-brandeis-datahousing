@@ -81,7 +81,7 @@ API_PREFIX = '/experiments'
 
 
 bp = Blueprint('experiments', __name__)
-print(f'{bp} import_name={bp.import_name} __name__={__name__}')
+#print(f'{bp} import_name={bp.import_name} __name__={__name__}')
 
 
 @bp.get(f"{API_PREFIX}/stream")

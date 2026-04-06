@@ -30,17 +30,17 @@
 </table>
 </blockquote>
 
-<p>Pipelines</p>
+<p>Workflows</p>
 
 <blockquote>
 <table cellspacing="0" cellpadding="8" border="1">
-{% for pipeline in pipelines %}
+{% for workflow in workflows %}
 <tr valign="top">
-  <td>{{pipeline['mmif_count']}}</td>
+  <td>{{workflow['mmif_count']}}</td>
   <td>
-    <a href="browse_paths.html?path={{pipeline['full_path']}}">{{pipeline['path']}}</a><br/>
-    {% for spec in pipeline['spec'] %}
-    <pre>{{pipeline['spec'][spec]}}</pre>
+    <a href="browse_paths.html?path={{workflow['path']}}">{{workflow['path']}}</a><br/>
+    {% for spec in workflow['spec'] %}
+    <pre>{{workflow['spec'][spec]}}</pre>
     {% endfor %}
   </td>
 </tr>

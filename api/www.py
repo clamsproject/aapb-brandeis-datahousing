@@ -19,10 +19,10 @@ from inspector.config import INDEX_PAGE, CSS_PAGE, JS_PAGE, VIEWS_PAGE
 from inspector.config import TIMEFRAMES_PAGE, CORRELATIONS_PAGE, TRANSCRIPT_PAGE
 from inspector.config import CAPTIONS_PAGE, ENTITIES_PAGE
 
-from api.assets import search_assets
+from api.model.assets import search_assets
+from api.model.analytics import storage_analytics
 from api.errors import StorageServerError
-from api.mmif_download import get_mmif_for_guid
-from api.analytics import storage_analytics
+from api.model.storage import get_mmif_for_guid
 from api.utils import strip_prefix, ServerDirectory, MmifFile, ParameterFile
 from api.utils import hash_from_dictionary
 
@@ -31,7 +31,7 @@ load_dotenv()
 
 
 bp = Blueprint('www', __name__, template_folder='templates')
-print(f'{bp} import_name={bp.import_name} __name__={__name__}')
+#print(f'{bp} import_name={bp.import_name} __name__={__name__}')
 
 
 DEBUG = True
@@ -189,13 +189,13 @@ def display_inspector_page(page_name: str) -> str:
 
 @bp.get('/www/analytics.html')
 def analytics():
-    analytics = json.loads(storage_analytics().data)
-    properties = {p: analytics[p] for p in analytics.keys() if p != 'pipelines'}
-    pipelines = sorted(analytics['workflows'], key=itemgetter('path'))
-    for pl in pipelines:
-        pl['full_path'] = Path(STORAGE_DIR) / pl['path']
+    analytics = storage_analytics()
+    properties = {p: analytics[p] for p in analytics.keys() if p != 'workflows'}
+    workflows = sorted(analytics['workflows'], key=itemgetter('path'))
+    for workflow in workflows:
+        workflow['full_path'] = Path(STORAGE_DIR) / workflow['path']
     return render_template(
-        'analytics.html', properties=properties, pipelines=pipelines)
+        'analytics.html', properties=properties, workflows=workflows)
 
 
 class InspectorData:

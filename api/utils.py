@@ -49,8 +49,8 @@ def strip_prefix(prefix: str, path: Path) -> Path:
 
 class ServerDirectory:
 
-    """Class for a directory on the storage server. With functionality to navigate
-    down the storgae server and some goodies for the jinja templates."""
+    """Class for a directory on the storage server. Includes functionality to
+    navigate down the storage server."""
 
     def __init__(self, storage_dir: str, path: str):
         self.base = Path(storage_dir)
