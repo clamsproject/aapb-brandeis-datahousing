@@ -125,18 +125,6 @@ def file_typer(path):
     return file_types_idx.get(path.suffix, 'other')
 
 
-def aapb_generate(guid, extension):
-    """generates a file from AAPB given a guid and file type, for future use, currently NOT IN USE"""
-    # TODO: needs to be updated with AAPB API
-    root = Path(ASSET_DIR)
-    dir = root.joinpath(DOWNLOAD_DIR)
-    if not dir.is_dir():
-        dir.mkdir()
-    filename = dir.joinpath(guid + extension)
-    filename.touch()
-    return filename
-
-
 def search_assets(guid, file_type=None):
     if file_type is None:
         file_type = []

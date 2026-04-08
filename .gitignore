@@ -4,9 +4,8 @@
 ### aapb-brandeis-datahousing ###
 
 api/database.*
-api/multi-guid-response*
+multi-guid-response*
 examples/*
-packages/*
 out*
 log*
 tmp*
@@ -14,7 +13,6 @@ tmp*
 .python-version
 backup.sh
 find.sh
-mmif-storage*.txt
 
 ### Linux ###
 *~

@@ -1,16 +1,14 @@
 # Notes on the current state of the repo
 
-This code needs refactoring. Below are some of the problems.
+This code needed refactoring. These are some notes reflecting what was done.
 
 In addition:
 
 - some code should perhaps be refactored to mmif-python
-- this could be its own package on PyPI
+- this might be its own package on PyPI
 
 
 ## Progress and changes
-
-> While this list grows prose from below with proposed changes will be culled.
 
 Structure was updated a bit, not quite using a clams\_datahousing package as suggested earlier but at least adding a sripts directory and refactoring the files inside the api directory (for now just the blueprints).
 
@@ -21,77 +19,44 @@ Dependencies:
 Blueprints refactoring:
 
 - Now using the following blueprints: api, assets, mmif\_download, mmif\_upload, www and experiments.
-- The init file only has the very small api blueprint with the welcome message.
+- All blueprints are created in their own file.
 - Removed the complicated expression to parse the name of the module to get the import module.
-
-More on blueprints:
-
-- [https://adammking.medium.com/understanding-flask-blueprints-32d13f41e45a](https://adammking.medium.com/understanding-flask-blueprints-32d13f41e45a)
-- [https://realpython.com/flask-blueprint/](https://realpython.com/flask-blueprint/)
-- [https://blog.miguelgrinberg.com/post/the-flask-mega-tutorial-part-xv-a-better-application-structure](https://blog.miguelgrinberg.com/post/the-flask-mega-tutorial-part-xv-a-better-application-structure)
-- [https://www.geeksforgeeks.org/python/flask-blueprints/](https://www.geeksforgeeks.org/python/flask-blueprints/)
-- [https://oneuptime.com/blog/post/2026-01-27-flask-blueprints-modular/view](https://oneuptime.com/blog/post/2026-01-27-flask-blueprints-modular/view)
+- Most routes were moved to `api.routes` with the exception of the routes for the webpage and the exepriments.
 
 Unit tests:
 
 - Updated tests to be more robust and work with only one temporary directory.
 
+Overal structure:
 
-## Dependencies
+- Separated routes and domain logic. Now every route accesses some domain logic which could also be accessed locally from the command line.
+- The one exception is the www bludprint, where the the GUI code still has some domain logic in it.
 
-Still depends on the local inspector archive, and it is also unclear what happens when we make changes to the storage-inspector interactions, maybe then reintroduing a new inspector archive is the easiest.
+Dependencies:
 
+- Dependency on the mmif-python package in `/packages` was removed.
+- Still depends on the local inspector archive.
+- It is also unclear what happens when we make changes to the storage-inspector interactions, maybe then reintroduing a new package is the easiest.
 
-## Structure
+Cleanup:
 
-The organization of the api directory is somewhat haphazard. The web service files seem to do a lot of stuff that should be done by some package that takes care of dealing with the storage. For example, many of the functions in mmif\_storage.py and www.py are dealing with setting parameters, manipulating app names and searching for MMIF files.
+- Removed the DOWNLOAD\_DIR environment variable.
+- Removed the `prototype` directory which had some yaml and json config files for tests that are not in this repo.
+- Removed some code that did not seem to have a purpose anymore. 
+- Moved some non-api scripts into a separate directory.
 
-Taking it piece by piece:
+Other:
 
-- Blueprint **api**. This one is fine, it is in the init file and just returns a message.
-- Blueprint **assets**. Its endpoint is just a search for assets, all the rest is guid manipulation, database functions, directory searching and checking. It allows the asset path to be a symlink.
-- Blueprint **mmif\_upload**. Mostly alright, but upload\_mmif could use some attention.
-- Blueprint **mmif\_download**. Not sure about mmif\_download and the rewind functionality.
-- Blueprint **analytics**. One big function to collect all stats, at least factor that out.
-- Blueprint **www**. Not as bad as I first thought, but check all routes for non-route logic and at least factor out the inspector code.
-- Module **utils**. A coule of true utility funcitons but also classes ServerDirectory, ParameterFile and MmifFile. Those classes perhaps deserve their own module.
+- Renamed `wsgi.py` into `app_production.py` because with the former you would do a full database build each time you type `flask --help`. Also changed the imports so it works after the refactoring.
+- Changed `baapb-datahousing.container` so that it loads the right app.
+ 
 
-In general, separate routes from domain logic and have routes in their own files, perhaps inside a routes subdir, or maybe one subdir per blueprint where each blueprint has its own routes.py file.
+## Remaining issues
 
-Trying this with the assets blueprint first. Now it just does a search, it should probably have upload and download endpoints as well.
+We do not need both the requirement files and the pyproject file since you can do `pip install .`. But using requirements files has been our approach so far and we have no current plans to change that. 
 
-> Laptop should have something in the assets directory.
+Perhaps part of the code or all of the code in `api/utils.py` should be moved.
 
+Documentation may have to be updated.
 
-## Cleanup
-
-Look at these directory names:
-
-```
-ASSET_DIR=/Users/Shared/aapb/assets
-DOWNLOAD_DIR=/Users/Shared/aapb/downloads
-STORAGE_DIR=/Users/Shared/aapb/mmif-storage-251016
-```
-
-The second one is not used (except for an in unused method in api.assets, see below).
-
-The `prototype` has some yaml and json config files that do not appear to be used anywhere so they can be deleted or should at least be put elsewhere.
-
-We do not need both the requirement files and the pyproject file since you can do
-
-```bash
-pip install .
-```
-
-But need to put pytest in an optional dependency.
-
-Remove the following?
-
-- wsgi.py (currently it does nothing)
-- api.assets.aapb_generate does not seem to be used
-
-Move the following?
-
-- populate_*.py to scripts
-- check_db.py to scripts
-
+I did not test the interaction of `app_production.py` and `baapb-datahousing.container`. It might also make sense to not always create the entire database. Probably connected to this is that the location of the database is now hardwired to `api/database.db`, would like to consider using another environment setting for this.

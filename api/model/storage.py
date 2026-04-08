@@ -79,7 +79,6 @@ def get_mmif_for_guid(workflow_id: str, guid: str, num_views: int):
     Retrieve the MMIF file for a workflow and GUID. If none was found raise a
     StorageServerError.
     """
-    print('>>> api.model.storage.get_miff_for_guid()')
     guid = guid + ".mmif"
     path = os.path.join(workflow_id, guid)
     # if filepath exists, we can return it

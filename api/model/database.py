@@ -9,12 +9,13 @@ Module to build and access the assets database.
 #       api.model.assets did not seem to take hold.
 # TODO: must put in guard rails to update the index anytime an asset is added
 
+import time
 import sqlite3
 from datetime import date
 from pathlib import Path
 
 from api import DATABASE
-from api.model.assets import file_typer
+from api.model.assets import file_typer, check_asset_dir, check_symlink
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -34,7 +35,7 @@ def initialize_database(populate: bool = False):
     """
     Creates the database from the schema. If populate is True then an existing
     table in the database will be dropped, recreated and populated from paths in
-    the assets directory. Otherwise the code just makes sure that the table exists.
+    the assets directory. Otherwise the code just makes sure the schema exist.
     """
     connection = sqlite3.connect(DATABASE)
     if populate:

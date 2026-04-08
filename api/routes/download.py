@@ -60,19 +60,16 @@ def download_mmif():
 
     """
     data = json.loads(request.data.decode('utf-8'))
-    print('>>>', data)
     # build workflow storage path from request JSON
     # e.g. {"workflow": {"swt-detection/v2.0": {"pretty": "True"}}}
     # becomes "swt-detection/v2.0/paramhash"
     wfid_segments = []
     for clams_app, params in data["workflow"].items():
-        print('>>>', clams_app, params)
         wfid_segments.append(clams_app)
         try:
             wfid_segments.append(generate_param_hash(params))
         except AttributeError:
             wfid_segments.append(generate_param_hash({}))
-        print('>>>', wfid_segments)
     wfid = '/'.join(wfid_segments)
     # get number of views for rewind if necessary
     num_views = len(data.get('workflow', []))
