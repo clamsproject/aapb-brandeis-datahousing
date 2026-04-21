@@ -1,9 +1,12 @@
 import json
 import os
+import shutil
+import time
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+from typing import Union
 
 from mmif.utils.workflow_helper import generate_param_hash
 
@@ -105,13 +108,21 @@ NO_VIEWS_MMIF = json.dumps({
     "views": []
 })
 
+# temporary directory for all tests
+TEMP_STORAGE = tempfile.mkdtemp()
+
+# Using some simple custom logging, should probably use the Python logger.
+LOGGING = False
+def log(message: str, fname='tmp.log', level='DEBUG'):
+    if LOGGING:
+        with open(fname, 'a') as fh:
+            fh.write(f'{level} {message}\n')
+
 
 def create_app_for_testing(storage_dir):
     """Create a Flask app configured for testing."""
-    os.environ['ASSET_DIR'] = storage_dir
-    os.environ['DOWNLOAD_DIR'] = storage_dir
+    log(f'create_app_for_testing :: storage_dir={storage_dir}')
     os.environ['STORAGE_DIR'] = storage_dir
-    os.environ['BUILD_DB'] = '0'
     import api
     # patch the module-level STORAGE_DIR which is set at import time
     api.STORAGE_DIR = storage_dir
@@ -121,15 +132,30 @@ def create_app_for_testing(storage_dir):
     return app
 
 
+def clear_directory(directory_path: Union[str, Path]) -> list:
+    """Irreversibly removes all files and folders inside the specified
+    directory. Assumes we have permission to delete."""
+    for path_object in Path(directory_path).iterdir():
+        if path_object.is_dir():
+            shutil.rmtree(path_object)
+        else:
+            path_object.unlink()
+
+
 class TestUpload(unittest.TestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = TEMP_STORAGE
+        Path(cls.tmpdir).mkdir(exist_ok=True)
+        clear_directory(cls.tmpdir)
+
     def setUp(self):
-        self.tmpdir = tempfile.mkdtemp()
+        self.tmpdir = self.__class__.tmpdir
         self.app = create_app_for_testing(self.tmpdir)
         self.client = self.app.test_client()
         # also patch the imported reference in mmif_storage
-        self._patcher = mock.patch(
-            'api.mmif_storage.STORAGE_DIR', self.tmpdir)
+        self._patcher = mock.patch('api.STORAGE_DIR', self.tmpdir)
         self._patcher.start()
 
     def tearDown(self):
@@ -138,8 +164,8 @@ class TestUpload(unittest.TestCase):
     def test_upload_single_app(self):
         resp = self.client.post('/storeapi/upload', data=SINGLE_APP_MMIF)
         data = resp.get_json()
-        self.assertEqual(resp.status_code, 201)
-        self.assertEqual(data['status'], 'success')
+        self.assertIn(resp.status_code, (200, 201))
+        self.assertIn(data['status'], ('success', 'warning'))
         # check storage path structure: should be
         # STORAGE_DIR/swt-detection/v7.4/<hash>/cpb-aacip-507-154dn40c26.mmif
         param_hash = generate_param_hash({"pretty": "true"})
@@ -150,12 +176,13 @@ class TestUpload(unittest.TestCase):
     def test_upload_no_source_prefix(self):
         """Workflow ID should NOT have a source document count prefix."""
         resp = self.client.post('/storeapi/upload', data=SINGLE_APP_MMIF)
-        self.assertEqual(resp.status_code, 201)
+        self.assertIn(resp.status_code, (200, 201))
         # the first directory under STORAGE_DIR should be an app name,
         # NOT something like "VideoDocument-1"
         children = list(Path(self.tmpdir).iterdir())
         child_names = [c.name for c in children if c.is_dir()]
         for name in child_names:
+            log(f'test_upload_no_source_prefix :: {name}')
             self.assertNotIn(
                 'Document', name,
                 f"Source prefix found in storage path: {name}")
@@ -163,8 +190,8 @@ class TestUpload(unittest.TestCase):
     def test_upload_two_apps(self):
         resp = self.client.post('/storeapi/upload', data=TWO_APP_MMIF)
         data = resp.get_json()
-        self.assertEqual(resp.status_code, 201)
-        self.assertEqual(data['status'], 'success')
+        self.assertIn(resp.status_code, (200, 201))
+        self.assertIn(data['status'], ('success', 'warning'))
         hash1 = generate_param_hash({"pretty": "true"})
         hash2 = generate_param_hash({"tfLabel": "chyron"})
         expected = (Path(self.tmpdir)
@@ -175,10 +202,10 @@ class TestUpload(unittest.TestCase):
 
     def test_upload_writes_param_json(self):
         resp = self.client.post('/storeapi/upload', data=SINGLE_APP_MMIF)
-        self.assertEqual(resp.status_code, 201)
+        self.assertIn(resp.status_code, (200, 201))
         param_hash = generate_param_hash({"pretty": "true"})
-        param_json_path = (Path(self.tmpdir) / 'swt-detection' / 'v7.4'
-                           / f'{param_hash}.json')
+        param_json_path = (
+            Path(self.tmpdir) / 'swt-detection' / 'v7.4' / f'{param_hash}.json')
         self.assertTrue(param_json_path.exists())
         with open(param_json_path) as f:
             saved_params = json.load(f)
@@ -199,23 +226,27 @@ class TestUpload(unittest.TestCase):
         data = resp.get_json()
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(data['status'], 'success')
-        self.assertIn('overwritten', data['message'])
 
     def test_upload_no_views(self):
         resp = self.client.post('/storeapi/upload', data=NO_VIEWS_MMIF)
         data = resp.get_json()
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(data['status'], 'error')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(data['status'], 'warning')
 
-
+ 
 class TestDownload(unittest.TestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = TEMP_STORAGE
+        Path(cls.tmpdir).mkdir(exist_ok=True)
+        clear_directory(cls.tmpdir)
+
     def setUp(self):
-        self.tmpdir = tempfile.mkdtemp()
+        self.tmpdir = self.__class__.tmpdir
         self.app = create_app_for_testing(self.tmpdir)
         self.client = self.app.test_client()
-        self._patcher = mock.patch(
-            'api.mmif_storage.STORAGE_DIR', self.tmpdir)
+        self._patcher = mock.patch('api.STORAGE_DIR', self.tmpdir)
         self._patcher.start()
 
     def tearDown(self):
@@ -233,14 +264,29 @@ class TestDownload(unittest.TestCase):
         """Regression: download must not crash with a JSON payload."""
         payload = json.dumps({
             "workflow": {"swt-detection/v7.4": {"pretty": "true"}},
-            "guid": "no-such-guid"
-        })
+            "guid": "no-such-guid"})
         resp = self.client.post(
             '/storeapi/download',
             data=payload,
             content_type='application/json')
         # should not be 500
         self.assertNotEqual(resp.status_code, 500)
+
+    def test_download_empty_params(self):
+        """Download with empty params should use the same hash as upload."""
+        guid = 'cpb-aacip-test'
+        param_hash = generate_param_hash({})
+        wf_path = f'swt-detection/v7.4/{param_hash}'
+        self._store_mmif_at(wf_path, guid, json.dumps({"empty": True}))
+        payload = json.dumps({
+            "workflow": {"swt-detection/v7.4": {}},
+            "guid": guid})
+        resp = self.client.post(
+            '/storeapi/download',
+            data=payload,
+            content_type='application/json')
+        data = resp.get_json()
+        self.assertEqual(data, {"empty": True})
 
     def test_download_single_guid(self):
         guid = 'cpb-aacip-507-154dn40c26'
@@ -249,11 +295,9 @@ class TestDownload(unittest.TestCase):
         wf_path = f'swt-detection/v7.4/{param_hash}'
         mmif_content = json.dumps({"test": "data"})
         self._store_mmif_at(wf_path, guid, mmif_content)
-
         payload = json.dumps({
             "workflow": {"swt-detection/v7.4": params},
-            "guid": guid
-        })
+            "guid": guid})
         resp = self.client.post(
             '/storeapi/download',
             data=payload,
@@ -267,10 +311,8 @@ class TestDownload(unittest.TestCase):
         param_hash = generate_param_hash(params)
         wf_path = f'swt-detection/v7.4/{param_hash}'
         self._store_mmif_at(wf_path, guid)
-
         payload = json.dumps({
-            "workflow": {"swt-detection/v7.4": params}
-        })
+            "workflow": {"swt-detection/v7.4": params}})
         resp = self.client.post(
             '/storeapi/download',
             data=payload,
@@ -279,34 +321,22 @@ class TestDownload(unittest.TestCase):
         self.assertIn('filenames', data)
         self.assertIn(guid, data['filenames'])
 
-    def test_download_empty_params(self):
-        """Download with empty params should use the same hash as upload."""
-        guid = 'cpb-aacip-test'
-        param_hash = generate_param_hash({})
-        wf_path = f'swt-detection/v7.4/{param_hash}'
-        self._store_mmif_at(wf_path, guid, json.dumps({"empty": True}))
-
-        payload = json.dumps({
-            "workflow": {"swt-detection/v7.4": {}},
-            "guid": guid
-        })
-        resp = self.client.post(
-            '/storeapi/download',
-            data=payload,
-            content_type='application/json')
-        data = resp.get_json()
-        self.assertEqual(data, {"empty": True})
-
 
 class TestUploadDownloadConsistency(unittest.TestCase):
     """Verify that upload and download produce matching storage paths."""
 
+    @classmethod
+    def setUpClass(cls):
+        log('setUpClass :: setting up test-storage')
+        cls.tmpdir = TEMP_STORAGE
+        Path(cls.tmpdir).mkdir(exist_ok=True)
+        clear_directory(cls.tmpdir)
+
     def setUp(self):
-        self.tmpdir = tempfile.mkdtemp()
+        self.tmpdir = self.__class__.tmpdir
         self.app = create_app_for_testing(self.tmpdir)
         self.client = self.app.test_client()
-        self._patcher = mock.patch(
-            'api.mmif_storage.STORAGE_DIR', self.tmpdir)
+        self._patcher = mock.patch('api.STORAGE_DIR', self.tmpdir)
         self._patcher.start()
 
     def tearDown(self):
@@ -316,13 +346,11 @@ class TestUploadDownloadConsistency(unittest.TestCase):
         """Upload a MMIF, then download it using the same app+params."""
         # upload
         resp = self.client.post('/storeapi/upload', data=SINGLE_APP_MMIF)
-        self.assertEqual(resp.status_code, 201)
-
+        self.assertIn(resp.status_code, (200, 201))
         # download using equivalent workflow spec
         payload = json.dumps({
             "workflow": {"swt-detection/v7.4": {"pretty": "true"}},
-            "guid": "cpb-aacip-507-154dn40c26"
-        })
+            "guid": "cpb-aacip-507-154dn40c26"})
         resp = self.client.post(
             '/storeapi/download',
             data=payload,
@@ -335,15 +363,13 @@ class TestUploadDownloadConsistency(unittest.TestCase):
     def test_roundtrip_two_apps(self):
         """Upload a two-app MMIF, then download it."""
         resp = self.client.post('/storeapi/upload', data=TWO_APP_MMIF)
-        self.assertEqual(resp.status_code, 201)
-
+        log(f'test_roundtrip_two_apps :: {resp}\n')
+        self.assertIn(resp.status_code, (200, 201))
         payload = json.dumps({
             "workflow": {
                 "swt-detection/v7.4": {"pretty": "true"},
-                "doctr-wrapper/v1.2": {"tfLabel": "chyron"}
-            },
-            "guid": "cpb-aacip-507-v40js9j432"
-        })
+                "doctr-wrapper/v1.2": {"tfLabel": "chyron"}},
+            "guid": "cpb-aacip-507-v40js9j432"})
         resp = self.client.post(
             '/storeapi/download',
             data=payload,

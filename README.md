@@ -7,12 +7,14 @@ At the moment, the server is used to resolve AAPB GUIDs to local file paths, and
 
 ## Usage 
 
+
 ### Within CLAMS apps
 
-The server deployment address is stored as [a organization variable](https://github.com/organizations/clamsproject/settings/variables/actions). To use the server (and `baapb` scheme in MMIF document locations), set `BAAPB_RESOLVER_ADDRESS` environment variable to the deployment address, and install the client plugin. 
+The server deployment address is stored as [an organization variable](https://github.com/organizations/clamsproject/settings/variables/actions). To use the server (and `baapb` scheme in MMIF document locations), set the `BAAPB_RESOLVER_ADDRESS` environment variable to the deployment address, and install the client plugin. 
 
+<!--
 All `brandeis` tagged pre-built container images (available in https://github.com/orgs/clamsproject/packages) 
-
+-->
 
 ### Server API
 
@@ -79,8 +81,8 @@ If the pipeline path did not exist on the server, the response will still includ
 For the single-guid mode you add a guid and the server will return a MMIF file or a warning if the file did not exist:
 
 ```bash
-curl -X POST 127.0.0.1:8001/storeapi/download
-    -H 'Content-Type: "application/json"'
+curl -X POST 127.0.0.1:8001/storeapi/download \
+    -H 'Content-Type: "application/json"' \
     -d '
     {
         "workflow": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },
@@ -113,7 +115,7 @@ The zipfile returned has the MMIF files for each GUID, in addition it has an err
 
 To retrieve information on the status of data in the MMIF storage directory, use the `storeapi/status` route:
 
-```angular2html
+```bash
 curl -X GET 127.0.0.1:8001/storeapi/status
 ```
 
@@ -174,11 +176,21 @@ Install all the python dependencies with `pip install -r requirements.txt`, and 
 * `FLASK_APP`: must be `api`
 * `FLASK_DEBUG`: set to `1` to enable debug mode, otherwise `0`
 * `FLASK_RUN_PORT`: port number to listen on
-* `FLASK_RUN_HOST`: hostname to listen
+* `FLASK_RUN_HOST`: hostname
 * `ASSET_DIR`: path to the directory on the server where the AAPB media files (assets) are stored
-* `DOWNLOAD_DIR`: currently not in use
 * `STORAGE_DIR`: the directory where MMIF files are stored
 * `BUILD_DB`: set to `1` to build the database from scratch, otherwise `0`
 * `DEVELOPER_MODE`: set to `1`  for developer mode, which adds some routes to the API
 
-Start the server with `flask run`.
+Before you start the server for the first time you should build the assets database.
+
+```bash
+flask create-db
+```
+
+To start the server do
+
+```bash
+flask run
+```
+
