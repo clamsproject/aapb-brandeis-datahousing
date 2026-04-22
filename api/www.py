@@ -11,8 +11,6 @@ from operator import itemgetter
 from flask import Flask, request, jsonify, Blueprint, render_template
 from jinja2 import Template
 
-import mmif
-
 import inspector
 from inspector.inspect import Summary
 from inspector.config import INDEX_PAGE, CSS_PAGE, JS_PAGE, VIEWS_PAGE
@@ -23,15 +21,14 @@ from api.model.assets import search_assets
 from api.model.analytics import storage_analytics
 from api.errors import StorageServerError
 from api.model.storage import get_mmif_for_guid
-from api.utils import strip_prefix, ServerDirectory, MmifFile, ParameterFile
-from api.utils import hash_from_dictionary
+from api.utils import ServerDirectory, MmifFile, ParameterFile
+from api.utils import path_from_workflow_specs, strip_prefix
 
 
 load_dotenv()
 
 
 bp = Blueprint('www', __name__, template_folder='templates')
-#print(f'{bp} import_name={bp.import_name} __name__={__name__}')
 
 
 DEBUG = True
@@ -39,24 +36,6 @@ DEBUG = True
 
 ASSET_DIR = os.environ.get('ASSET_DIR')
 STORAGE_DIR = os.environ.get('STORAGE_DIR')
-
-
-# TODO: this is a patch to make this works with the recent merge from feature
-# branch pipeline_id-gen-on-sdk, should be replaced with an appropriate helper
-# from the mmif.utils package.
-def path_from_pipeline_specs(pipeline_spec: dict):
-    """
-    Helper method to read in a json object containing the names of the pipelined
-    apps and their parameters, and then build a path out of the pipelined apps
-    and hashed parameters.
-    """
-    pipeline_path = ""
-    for clams_app in pipeline_spec["pipeline"]:
-        # TODO: should probably use pathlib.Path
-        param_hash = hash_from_dictionary(pipeline_spec["pipeline"][clams_app])
-        pipeline_path += f"/{clams_app}/{param_hash}"
-    # removing first "/" so it doesn't mess with os.path.join later
-    return pipeline_path[1:]
 
 
 @bp.get('/www/')
@@ -84,43 +63,43 @@ def search_mmif():
     # TODO: there is some overlap here with api.mmif_storage.download_mmif()
     # may need some refactoring
     guid = request.form.get('guid', '')
-    pipeline = request.form.get('pipeline', '')
+    workflow = request.form.get('workflow', '')
     debug(f'guid = {guid}')
-    debug(f'pipeline = {" ".join(str(pipeline).split())}')
+    debug(f'workflow = {" ".join(str(workflow).split())}')
     status = None
     message = None
     mmif_file = None
     mmif_files = None
-    pipeline_path = None
-    if not pipeline:
-        status = 'no-pipeline'
-        message = 'Missing required parameter: need at least a pipeline'
+    workflow_path = None
+    if not workflow:
+        status = 'no-workflow'
+        message = 'Missing required parameter: need at least a workflow'
         message = json.dumps({"message": message}, indent=2)
     else:
-        pipeline_path = path_from_pipeline_specs(
-            {"guid": guid, "pipeline": json.loads(pipeline)})
-        debug(f'pipeline_path = {pipeline_path}')
-        full_pipeline_path = os.path.join(os.environ.get('STORAGE_DIR'), pipeline_path)
+        workflow_path = path_from_workflow_specs(
+            {"guid": guid, "workflow": json.loads(workflow)})
+        debug(f'workflow_path = {workflow_path}')
+        full_workflow_path = os.path.join(os.environ.get('STORAGE_DIR'), workflow_path)
         if not guid:
-            # get the files at the pipeline path
-            status = 'pipeline'
-            mmif_files = sorted([p.stem for p in Path(full_pipeline_path).glob('*')])
-            debug(f'Found {len(mmif_files)} MMIF files for pipeline')
+            # get the files at the workflow path
+            status = 'workflow'
+            mmif_files = sorted([p.stem for p in Path(full_workflow_path).glob('*')])
+            debug(f'Found {len(mmif_files)} MMIF files for workflow')
         elif isinstance(guid, str):
             # get the one MMIF file, but check for its existence
-            status = 'pipeline-guid'
-            mmif_file = Path(full_pipeline_path) / f'{guid}.mmif'
+            status = 'workflow-guid'
+            mmif_file = Path(full_workflow_path) / f'{guid}.mmif'
             if not mmif_file.exists():
-                status = 'pipeline-guid-no-files'
+                status = 'workflow-guid-no-files'
                 message = json.dumps(
                     {"message" : f"File does not exist at that path",
                      "filename": mmif_file.name,
-                     "pathname": pipeline_path}, indent=2)
+                     "pathname": workflow_path}, indent=2)
     debug(f'status = {status}')
     return render_template(
         'search_mmif.html',
-        status=status, message=message, guid=guid, pipeline=pipeline,
-        path=pipeline_path, mmif_file=mmif_file, mmif_files=mmif_files)
+        status=status, message=message, guid=guid, workflow=workflow,
+        path=workflow_path, mmif_file=mmif_file, mmif_files=mmif_files)
 
 
 @bp.get('/www/browse_paths.html')
@@ -249,7 +228,7 @@ Zero-guid scenario example:
 
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {"chyron-detection/v1.0": {}}}'
+    -d '{"workflow": {"chyron-detection/v1.0": {}}}'
 
 GUID: None
 Pipeline: {"chyron-detection/v1.0": {}}
@@ -261,7 +240,7 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
     -d '
     {
-        "pipeline": { "chyron-detection/v1.0": {} },
+        "workflow": { "chyron-detection/v1.0": {} },
         "guid": "cpb-aacip-525-028pc2v94s"
     }'
 

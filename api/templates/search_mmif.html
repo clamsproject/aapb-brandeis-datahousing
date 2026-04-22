@@ -19,11 +19,11 @@
   ]
 </p>
 
-<p>The primary search is on the pipeline, which is required. The optional GUID
+<p>The primary search is on the workflow, which is required. The optional GUID
 (actually, a substring of a GUI) will constrain the search further. At the moment
 there is no search on GUID only.</p>
 
-<p>Example pipelines:</p>
+<p>Example workflows:</p>
 
 <blockquote>
 <pre>{"chyron-detection/v1.0": {}}</pre>
@@ -45,9 +45,9 @@ there is no search on GUID only.</p>
             <td><input type="text" name="guid" size="80" value='{{guid}}'></td>
         </tr>
         <tr valign="top">
-            <td>Pipeline</td>
+            <td>Workflow</td>
             <td>
-                <textarea name="pipeline" rows="10" cols="80">{{pipeline}}</textarea>
+                <textarea name="workflow" rows="10" cols="80">{{workflow}}</textarea>
             </td>
         </tr>
     </table>
@@ -55,14 +55,14 @@ there is no search on GUID only.</p>
 </form>
 </blockquote>
 
-{% if status == 'no-pipeline' %}
+{% if status == 'no-workflow' %}
 
 <h4>Error</h4>
 <blockquote>
     <pre><code class="language-json">{{message}}</code></pre>
 </blockquote>
 
-{% elif status == 'pipeline' %}
+{% elif status == 'workflow' %}
 
 <h4>Pipeline path and files at path</h4>
 <blockquote>
@@ -82,7 +82,7 @@ there is no search on GUID only.</p>
 </table>
 </blockquote>
 
-{% elif status == 'pipeline-guid' %}
+{% elif status == 'workflow-guid' %}
 
 <h4>Search result</h4>
 <blockquote>
@@ -98,7 +98,7 @@ there is no search on GUID only.</p>
 </table>
 </blockquote>
 
-{% elif status == 'pipeline-guid-no-files' %}
+{% elif status == 'workflow-guid-no-files' %}
 
 <h4>Search result</h4>
 <blockquote>

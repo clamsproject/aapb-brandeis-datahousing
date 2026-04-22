@@ -7,13 +7,13 @@ Scratch file for some potentially random experiments.
 
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {
+    -d '{"workflow": {
             "slatedetection/v2.0": {
                 "threshold": "0.6", "pretty": "True", "stopAt": "9000"}}}'
 
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {
+    -d '{"workflow": {
             "slatedetection/v2.0": {
                 "threshold": "0.6", "pretty": "True", "stopAt": "9000"}},
          "guid": "cpb-aacip-29-1615dx6g"}'
@@ -22,35 +22,35 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
 
 curl -X POST 127.0.0.1:8001/storeapi/test1 \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {"whisper-wrapper/v8": {"modelSize": "small"}}}'
+    -d '{"workflow": {"whisper-wrapper/v8": {"modelSize": "small"}}}'
 
 curl -X POST 127.0.0.1:8001/storeapi/test1 \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {"whisper-wrapper/v8": {"modelSize": "small"}},
+    -d '{"workflow": {"whisper-wrapper/v8": {"modelSize": "small"}},
          "guid": "cpb-aacip-507-4746q1t25k"}'
 
 # now getting a bunch of SWT files
 
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {
+    -d '{"workflow": {
             "swt-detection/v6.1": {
                 "useStitcher": "false", "runningTime": "true", "hwFetch": "true"}}}'
 
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {
+    -d '{"workflow": {
             "swt-detection/v6.1": {
                 "useStitcher": "false", "runningTime": "true", "hwFetch": "true"}},
          "guid": [
             "cpb-aacip-259-wh2dcb8p", "cpb-aacip-c72fd5cbadc", "cpb-aacip-259-4j09zf95",
             "cpb-aacip-516-8c9r20sq57", "cpb-aacip-259-5717pw8g"]}'
 
-# now a two-part pipeline
+# now a two-part workflow
 
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {
+    -d '{"workflow": {
             "swt-detection/v6.1": {
                 "useStitcher": "false", "runningTime": "true", "hwFetch": "true"},
             "simple-timepoints-stitcher/v3.1": {
@@ -59,7 +59,7 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
 
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"pipeline": {
+    -d '{"workflow": {
             "swt-detection/v6.1": {
                 "useStitcher": "false", "runningTime": "true",  "hwFetch": "true"},
             "simple-timepoints-stitcher/v3.1": {
@@ -99,16 +99,16 @@ def test1():
     t0 = time.time()
     data = json.loads(request.data.decode('utf-8'))
     print('>>>', data)
-    pipeline = ms.path_from_pipeline_specs(data)
-    num_apps = len(data.get('pipeline', []))
+    workflow = ms.path_from_workflow_specs(data)
+    num_apps = len(data.get('workflow', []))
     guid = data.get('guid')
-    print('>>>', guid, num_apps, pipeline)
+    print('>>>', guid, num_apps, workflow)
     directory = os.environ.get('STORAGE_DIR')
-    pipeline = os.path.join(directory, pipeline)
+    workflow = os.path.join(directory, workflow)
     if guid is None:
-        return ms.zero_guid_download_response(pipeline)
+        return ms.zero_guid_download_response(workflow)
     else:
-        mmif = ms.get_mmif_for_guid(pipeline, guid, num_apps)
+        mmif = ms.get_mmif_for_guid(workflow, guid, num_apps)
         print('>>>', type(mmif), len(str(mmif)))
     result = {}
     for i in range(10):

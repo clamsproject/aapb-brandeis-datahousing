@@ -33,13 +33,29 @@ def getsize(obj):
     return size
 
 
+def path_from_workflow_specs(workflow_spec: dict):
+    """
+    Helper method to read in a json object containing the names of the app in a 
+    workflow and their parameters, and then build a path out of the apps and the
+    hashed parameters.
+
+    NOTE. This is similar to workflow_helper.generate_workflow_identifier in the
+    mmif.utils package, but different in that it takes a workflow spec dictionary
+    rather than a MMIF file, it also does not need to deal with apps that generate
+    multiple views.
+    """
+    wf_path = []
+    for clams_app, x in workflow_spec['workflow'].items():
+        param_hash = hash_from_dictionary(x)
+        wf_path.extend([clams_app, param_hash])
+    return '/'.join(wf_path)
+
+
 def hash_from_dictionary(parameters: dict) -> str:
     param_list = ['='.join(pair) for pair in parameters.items()]
     param_list.sort()
     param_string = ','.join(param_list)
     param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
-    #print('...', param_string)
-    #print('...', param_hash)
     return param_hash
 
 
@@ -116,16 +132,12 @@ class MmifFile:
     higher up the path including app parameter files."""
 
     def __init__(self, storage_dir: str, path: Path):
-        #print('>>>', storage_dir)
-        #print('>>>', path)
         self.storage = Path(storage_dir)
         self.path = path
         self.fullpath = Path(storage_dir) / path
-        #print('>>>', self.fullpath)
         self.summary = self.fullpath.parent / f'{self.fullpath.stem}.summ.json'
         self.summary_error = False
         self.description = self.fullpath.parent / f'{self.fullpath.stem}.desc.json'
-        self.pp()
 
     def summary_exists(self):
         return self.summary.exists()
