@@ -10,11 +10,7 @@ In addition:
 
 ## Progress and changes
 
-Structure was updated a bit, not quite using a clams\_datahousing package as suggested earlier but at least adding a sripts directory and refactoring the files inside the api directory (for now just the blueprints).
-
-Dependencies:
-
-- Removed the dependency on the local mmif-python archive.
+The code structure was updated, not quite using a clams\_datahousing package as suggested earlier but at least adding a scripts directory and refactoring the files inside the api directory.
 
 Blueprints refactoring:
 
@@ -30,7 +26,7 @@ Unit tests:
 Overal structure:
 
 - Separated routes and domain logic. Now every route accesses some domain logic which could also be accessed locally from the command line.
-- The one exception is the www bludprint, where the the GUI code still has some domain logic in it.
+- The one exception is the www blueprint, where the the GUI code still has some domain logic in it.
 
 Dependencies:
 
@@ -49,7 +45,7 @@ Other:
 
 - Renamed `wsgi.py` into `app_production.py` because with the former you would do a full database build each time you type `flask --help`. Also changed the imports so it works after the refactoring.
 - Changed `baapb-datahousing.container` so that it loads the right app.
- 
+
 
 ## Remaining issues
 

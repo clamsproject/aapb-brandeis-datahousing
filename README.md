@@ -29,7 +29,7 @@ To query available assets use the `searchapi` route with these three query strin
 * `file` — the type of the file to search for: any number of `text`, `image`, `audio`, `video`, `markup` and `other`, default is to search for all types
 * `onlyfirst` — when used only the first match will be returned, default is false
 
-Examples (these use URLs as if you have deployed your own server (see below)):
+Examples for a local install (the port numbers may differ depending on how you have deployed your server, see below):
 
 ```
 curl '127.0.0.1:8001/searchapi?guid=zw18'
@@ -169,7 +169,12 @@ This returns a dictionary with information on the full workflow, e.g.:
 ```
 
 
-### Deploy on your own
+### Storage Server Browser
+
+Some of the functionality above is also available via the Storage Server Browser at [http://localhost:8001/www/](http://localhost:8001/www/). You can search for assets and MMIF files, and then view the MMIF files and see descriptions and summaries for them. You can also open the inspector on a MMIF file. You cannot upload and download files.
+
+
+## Deploy on your own
 
 Install all the python dependencies with `pip install -r requirements.txt`, and configure your server using a `.env` file or via environment variables (see `.env.sample` for an example configuration file). The following variables need to be defined:
 
@@ -193,4 +198,37 @@ To start the server do
 ```bash
 flask run
 ```
+
+### Using Docker
+
+With Docker your server configuration settings in `.env` are likely to be more like the example in `.env.docker`:
+
+```python
+FLASK_APP=api
+FLASK_DEBUG=1
+FLASK_RUN_PORT=8080
+FLASK_RUN_HOST=0.0.0.0
+ASSET_DIR=/data/assets
+STORAGE_DIR=/data/mmif
+BUILD_DB=1
+DEVELOPER_MODE=0
+```
+
+To build a Docker image (change name and tag as needed):
+
+```bash
+docker build -t aapb-data:v1 -f Containerfile .
+```
+
+To run the container:
+
+```bash
+docker run --name aapb -d --rm -it -p 8080:8080 -v /Users/Shared/aapb:/data aapb-data:v1
+```
+
+This assumes that locally the assets and MMIF files live in subdirectories of `/Users/Shared/aapb`, adjust that path as needed. Note how the -v option mounts the local asset/mmif directories to the '/data' directory on the container, if you had used another path in the configuration settings for `ASSET_DIR` and `STORAGE_DIR` then you would have to adjust the docker-run command.
+
+The server runs on [http://localhost:8080/www/](http://localhost:8080/www/)
+
+Since `BUILD_DB` is set to 1 you should expect a delay, the API and website won't be running until the databse is created.
 
