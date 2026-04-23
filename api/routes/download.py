@@ -2,20 +2,44 @@
 
 Route for MMIF downloads.
 
-Example request:
+Example requests:
+
+# Just a workflow, makes the request act as a search for filename and a list
+# of filenames (and the workflow) will be in the return value.
 
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
     -d '{"workflow": {"swt-detection/v7.4": {"pretty": "true"}}}'
 
+# Adding a single GUID, now the return value is a MMIF file.
+
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
-    -d '{"workflow": {"swt-detection/v6.1": {"useStitcher": "false", "runningTime": "true", "hwFetch": "true"}}}'
+    -d '{"guid": "cpb-aacip-507-154dn40c26",
+         "workflow": {
+            "swt-detection/v7.4": {"pretty": "true"}}}'
+
+# Now with less trivial parameters, returns a list of files.
+
+curl -X POST 127.0.0.1:8001/storeapi/download \
+    -H 'Content-Type: "application/json"' \
+    -d '{"workflow": {
+            "swt-detection/v6.1": {
+                "useStitcher": "false", 
+                "runningTime": "true", 
+                "hwFetch": "true"}}}'
+
+# Same, but with multiple GUIDs added, writes a zip file.
 
 curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
     --output tmp.zip \
-    -d '{"workflow": {"swt-detection/v6.1": {"useStitcher": "false", "runningTime": "true", "hwFetch": "true"}}, "guid": ["cpb-aacip-259-wh2dcb8p","cpb-aacip-c72fd5cbadc"]}'
+    -d '{"workflow": {
+            "swt-detection/v6.1": {
+                "useStitcher": "false",
+                "runningTime": "true", 
+                "hwFetch": "true"}},
+         "guid": ["cpb-aacip-259-wh2dcb8p","cpb-aacip-c72fd5cbadc"]}'
 
 """
 
@@ -43,22 +67,6 @@ API_PREFIX = '/storeapi'
 
 @bp.post(f"{API_PREFIX}/download")
 def download_mmif():
-    # TODO (krim @ 2025-12-17): need to update this after https://github.com/clamsproject/aapb-brandeis-datahousing/issues/34 is resolved
-    """
-    request payload format:
-
-    {
-        "workflow": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },
-        "guid": "NON-EXISTING GUID"
-    }
-    or
-    {
-        "workflow": { "whisper-wrapper/v3": {"modelSize": "tiny"} },
-        "guid": ["cpb-aacip-507-154dn40c26", "cpb-aacip-507-v40js9j432", "NO-SUCH-GUID"]
-    }
-    {"workflow": {"swt-detection/v2.0-38-g7838415": {"pretty": "True"}}}
-
-    """
     data = json.loads(request.data.decode('utf-8'))
     # build workflow storage path from request JSON
     # e.g. {"workflow": {"swt-detection/v2.0": {"pretty": "True"}}}

@@ -8,7 +8,7 @@ from types import ModuleType, FunctionType
 from gc import get_referents
 
 from mmif.utils.cli import describe
-from mmif.utils.workflow_helper import describe_single_mmif
+from mmif.utils.workflow_helper import describe_single_mmif, generate_param_hash
 
 from mmif.utils.summarizer import Summary
 
@@ -45,18 +45,10 @@ def path_from_workflow_specs(workflow_spec: dict):
     multiple views.
     """
     wf_path = []
-    for clams_app, x in workflow_spec['workflow'].items():
-        param_hash = hash_from_dictionary(x)
+    for clams_app, parameters in workflow_spec['workflow'].items():
+        param_hash = generate_param_hash(parameters)
         wf_path.extend([clams_app, param_hash])
     return '/'.join(wf_path)
-
-
-def hash_from_dictionary(parameters: dict) -> str:
-    param_list = ['='.join(pair) for pair in parameters.items()]
-    param_list.sort()
-    param_string = ','.join(param_list)
-    param_hash = hashlib.md5(param_string.encode('utf-8')).hexdigest()
-    return param_hash
 
 
 def strip_prefix(prefix: str, path: Path) -> Path:
@@ -78,6 +70,13 @@ class ServerDirectory:
         else:
             self.path = Path(path)
             self.fullpath = Path(storage_dir) / path
+        # try to add the parameter file if there is one
+        self.parameter_file = None
+        if not self.fullpath.suffix:
+            parameter_file = self.fullpath.with_suffix('.json')
+            if parameter_file.exists():
+                pfile = ParameterFile(storage_dir, self.path.with_suffix('.json'))
+                self.parameter_file = pfile
 
     def __str__(self):
         return f'<ServerDirectory "{self.path}">'
@@ -102,6 +101,8 @@ class ServerDirectory:
             return path.name.endswith('.summ.json') or path.name.endswith('.desc.json')
         files = [sub for sub in self.fullpath.iterdir() if sub.is_file()]
         files = [f for f in files if not is_derived(f)]
+        # Another filter to exclude parameter files.
+        files = [f for f in files if not f.suffix == '.json']
         return list(sorted([self.strip_prefix(f) for f in files]))
 
     def pp(self):

@@ -2,6 +2,7 @@
 
 <head>
     <title>Storage Server - Navigate</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/prism.css') }}">
     <meta charset="UTF-8">
 </head>
 
@@ -23,8 +24,17 @@
 {% set directories = sdir.directories() %}
 {% set files = sdir.files() %}
 
+{% if sdir.parameter_file %}
+<p>Parameters</p>
+<script src="{{ url_for('static', filename='js/prism.js') }}"></script>
+<blockquote>
+<pre><code class="language-json">{{ sdir.parameter_file.parameters }}</code></pre>
+</blockquote>
+{% endif %}
+
 {% if directories %}
 <p>Directories</p>
+<!--<p>Directories (each reflecting a configuration of parameter settings)</p>-->
 <ul>
 {% for d in directories %}
 <li><a href=browse_paths.html?path={{d}}>{{d.name}}</a></li>
@@ -33,14 +43,10 @@
 {% endif %}
 
 {% if files %}
-<p>Files</p>
+<p>MMIF Files</p>
 <ul>
 {% for f in files %}
-{% if f.suffix == '.json' %}
-<li><a href=view_parameters.html?path={{f}}>{{f.name}}</a></li>
-{% elif f.suffix == '.mmif' %}
 <li><a href=view_mmif.html?&mode=parameters&path={{f}}>{{f.name}}</a></li>
-{% endif %}
 {% endfor %}
 </ul>
 {% endif %}

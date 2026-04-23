@@ -19,8 +19,6 @@ from inspector.config import CAPTIONS_PAGE, ENTITIES_PAGE
 
 from api.model.assets import search_assets
 from api.model.analytics import storage_analytics
-from api.errors import StorageServerError
-from api.model.storage import get_mmif_for_guid
 from api.utils import ServerDirectory, MmifFile, ParameterFile
 from api.utils import path_from_workflow_specs, strip_prefix
 
@@ -58,19 +56,27 @@ def search_asset():
     return render_template('search_assets.html', term=term, types=types, paths=paths)
 
 
-@bp.route('/www/search_mmif.html', methods=['get', 'post'])
-def search_mmif():
-    # TODO: there is some overlap here with api.mmif_storage.download_mmif()
-    # may need some refactoring
+@bp.get('/www/search_mmif.html')
+def search_mmif_get():
+    return render_template('search_mmif.html', status=None)
+
+
+@bp.post('/www/search_mmif.html')
+def search_mmif_post():
+    # TODO: this is a tad messy, and there is some overlap here with 
+    # api.mmif_storage.download_mmif(), may need some refactoring
+    
     guid = request.form.get('guid', '')
     workflow = request.form.get('workflow', '')
     debug(f'guid = {guid}')
     debug(f'workflow = {" ".join(str(workflow).split())}')
+    
     status = None
     message = None
     mmif_file = None
-    mmif_files = None
+    mmif_files = []
     workflow_path = None
+
     if not workflow:
         status = 'no-workflow'
         message = 'Missing required parameter: need at least a workflow'
@@ -84,7 +90,6 @@ def search_mmif():
             # get the files at the workflow path
             status = 'workflow'
             mmif_files = sorted([p.stem for p in Path(full_workflow_path).glob('*')])
-            debug(f'Found {len(mmif_files)} MMIF files for workflow')
         elif isinstance(guid, str):
             # get the one MMIF file, but check for its existence
             status = 'workflow-guid'
@@ -95,7 +100,11 @@ def search_mmif():
                     {"message" : f"File does not exist at that path",
                      "filename": mmif_file.name,
                      "pathname": workflow_path}, indent=2)
+    
     debug(f'status = {status}')
+    mmif_files = [mf for mf in mmif_files if not (mf[-5:] in ('.desc', '.summ'))]
+    debug(f'Found {len(mmif_files)} MMIF files for workflow')
+
     return render_template(
         'search_mmif.html',
         status=status, message=message, guid=guid, workflow=workflow,
@@ -106,12 +115,6 @@ def search_mmif():
 def browse_paths():
     sdir = ServerDirectory(STORAGE_DIR, request.args.get("path"))
     return render_template('browse_paths.html', sdir=sdir)
-
-
-@bp.get('/www/view_parameters.html')
-def view_parameters():
-    pfile = ParameterFile(STORAGE_DIR, request.args.get("path"))
-    return render_template('view_parameters.html', pfile=pfile)
 
 
 @bp.get('/www/view_mmif.html')
@@ -127,42 +130,47 @@ def view_file():
     return render_template('view_mmif.html', mfile=mfile, mode=mode)
 
 
-@bp.get('/www/inspector/index.html')
+@bp.get(f'/www/inspector/{INDEX_PAGE}')
 def inspector_index():
-    data = InspectorData('index.html')
-    rendered_template = data.template.render(summary=Summary(data.summ_file, data.summary))
+    data = InspectorData(INDEX_PAGE)
+    rendered_template = data.template.render(
+        summary=Summary(data.summ_file, data.summary))
     return update_rendered(rendered_template, data.css_file)
 
 
-@bp.get('/www/inspector/views.html')
+@bp.get(f'/www/inspector/{VIEWS_PAGE}')
 def inspector_views():
-    return display_inspector_page('views.html')
+    return display_inspector_page(VIEWS_PAGE)
 
 
-@bp.get('/www/inspector/timeframes.html')
+@bp.get(f'/www/inspector/{TIMEFRAMES_PAGE}')
 def inspector_timeframes():
-    data = InspectorData('timeframes.html')
-    rendered_template = data.template.render(summary=Summary(data.summ_file, data.summary))
+    data = InspectorData(TIMEFRAMES_PAGE)
+    rendered_template = data.template.render(
+        summary=Summary(data.summ_file, data.summary))
     return update_rendered(rendered_template, data.css_file, data.js_file)
 
 
-@bp.get('/www/inspector/transcript.html')
+@bp.get(f'/www/inspector/{TRANSCRIPT_PAGE}')
 def inspector_transcript():
-    data = InspectorData('transcript.html')
-    rendered_template = data.template.render(summary=Summary(data.summ_file, data.summary))
+    data = InspectorData(TRANSCRIPT_PAGE)
+    rendered_template = data.template.render(
+        summary=Summary(data.summ_file, data.summary))
     return update_rendered(rendered_template, data.css_file, data.js_file)
 
 
-@bp.get('/www/inspector/captions.html')
+@bp.get(f'/www/inspector/{CAPTIONS_PAGE}')
 def inspector_captions():
-    data = InspectorData('captions.html')
-    rendered_template = data.template.render(summary=Summary(data.summ_file, data.summary))
+    data = InspectorData(CAPTIONS_PAGE)
+    rendered_template = data.template.render(
+        summary=Summary(data.summ_file, data.summary))
     return update_rendered(rendered_template, data.css_file, data.js_file)
 
 
 def display_inspector_page(page_name: str) -> str:
     data = InspectorData(page_name)
-    rendered_template = data.template.render(summary=Summary(data.summ_file, data.summary))
+    rendered_template = data.template.render(
+        summary=Summary(data.summ_file, data.summary))
     return update_rendered(rendered_template, data.css_file, data.js_file)
 
 
@@ -182,8 +190,8 @@ class InspectorData:
     def __init__(self, page_name: str):
         templates_dir = Path(inspector.__file__).parent / 'templates'
         self.template = Template((Path(templates_dir) / page_name).read_text())
-        self.css_file = Path(inspector.__file__).parent / 'main.css'
-        self.js_file = Path(inspector.__file__).parent / 'main.js'
+        self.css_file = Path(inspector.__file__).parent / CSS_PAGE
+        self.js_file = Path(inspector.__file__).parent / JS_PAGE
         mmif_file = Path(request.args.get("path"))
         self.summ_file = Path(STORAGE_DIR) / mmif_file.parent / f'{mmif_file.stem}.summ.json'
 
@@ -230,10 +238,6 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
     -H 'Content-Type: "application/json"' \
     -d '{"workflow": {"chyron-detection/v1.0": {}}}'
 
-GUID: None
-Pipeline: {"chyron-detection/v1.0": {}}
-
-
 Single-guid scenario example:
 
 curl -X POST 127.0.0.1:8001/storeapi/download \
@@ -243,9 +247,6 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
         "workflow": { "chyron-detection/v1.0": {} },
         "guid": "cpb-aacip-525-028pc2v94s"
     }'
-
-GUID: cpb-aacip-525-028pc2v94s
-Pipeline: {"chyron-detection/v1.0": {}}
 
 '''
 
