@@ -10,6 +10,7 @@ dependencies = [
     "flask==2.*",
     "inspector-mv",
     "mmif-python>=1.3.0",
+    "rich>=15.0.0",
 ]
 
 [tool.uv.sources]

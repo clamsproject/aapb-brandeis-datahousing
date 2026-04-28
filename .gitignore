@@ -13,6 +13,8 @@ tmp*
 .python-version
 backup.sh
 find.sh
+uv.lock
+assets.txt
 
 ### Linux ###
 *~
