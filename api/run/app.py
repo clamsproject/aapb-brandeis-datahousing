@@ -1,14 +1,21 @@
 """
 
-This module takes care of running CLAMS Apps. It will typically be called from
-the ClamsShack instance.
+This module takes care of running CLAMS Apps. The main functionality is:
 
-It contains a couple of mockup apps just for quick development cycles.
+- Running jobs
+- Creating and updating MMIF source files
+
+The latter is done here because the code in mmif.utils.cli.source was so complex
+that it was easier to recreate it here than figure out how to use it properly.
+
+In addition, this module contains a couple of fake apps for quick development
+cycles.
 
 """
 
 import sys
 import time
+import json
 import argparse
 import subprocess
 from pathlib import Path
@@ -20,42 +27,64 @@ from mmif.serialize.annotation import Annotation, Document
 import api
 
 
+def run_job(name: str, location: Path, path: Path, batch: str, app: str, params: dict):
+    # TODO: consider handing it the ClamShack instance
+    # TODO: consider putting this code on ClamShack
+    param_string = json.dumps(params)
+    cmd = ['python', 'run_batch.py', name,
+           '--location', str(location),
+           '--path', str(path),
+           '--batch', batch,
+           '--app', app,
+           '--params', param_string]
+    cmd_str = ' '.join(str(p) for p in cmd)
+    with open(location / 'jobs' / name, 'a') as fh:
+        fh.write(f'COMMAND\t{cmd_str}\n')
+    process = subprocess.Popen(cmd, start_new_session=True)
+    with open(location / 'jobs' / name, 'a') as fh:
+        fh.write(f'PROCESS_ID\t{process.pid}\n')
+    return(process.pid)
+
+
 def run_tokenizer(mmif_file: Mmif, params: dict) -> Mmif:
-    if 'sleep' in params:
-        time.sleep(params['sleep'])
-    new_view = mmif_file.new_view()
-    new_view.new_contain(AnnotationTypes.Token)
-    return mmif_file
+    atypes = [AnnotationTypes.Token]
+    return run_app('http://apps.clams.ai/tokenizer/v1', mmif_file, params, atypes)
 
 
-def run_spacy(mmif_file: Mmif, params: dict) -> Mmif | Exception:
+def run_spacy(mmif_file: Mmif, params: dict) -> Mmif:
+    atypes = [AnnotationTypes.Token, AnnotationTypes.NamedEntity]
+    return run_app('http://apps.clams.ai/spacy/v3', mmif_file, params, atypes)
+
+
+def run_swt(mmif_file: Mmif, params: dict):
+    atypes = [AnnotationTypes.TimePoint, AnnotationTypes.TimeFrame]
+    return run_app('http://apps.clams.ai/swt/v7.0', mmif_file, params, atypes)
+
+
+def run_app(name: str, mmif_file: Mmif, params: dict, types: list):
     # doing this to make it fail once in a while so we can see what happens
     if Random().choice('abc') == 'a':
         raise Exception('Randomly generated exception')
     new_view = mmif_file.new_view()
-    new_view.metadata.app = 'spacy-v3'
-    new_view.new_contain(AnnotationTypes.Token)
-    new_view.new_contain(AnnotationTypes.NamedEntity)
+    new_view.metadata.app = name
+    for t in types:
+        new_view.new_contain(t)
+        new_view.new_contain(AnnotationTypes.NamedEntity)
     for param, value in params.items():
         new_view.metadata.add_parameter(param, str(value))
-    #print(mmif_file.views[0].metadata.parameters)
-    time.sleep(2)
+    # faking that it is taking some time
+    time.sleep(1)
     return mmif_file
 
 
-def run_swt(mmif_file: Mmif, params: dict):
-    new_view = mmif_file.new_view()
-    new_view.new_contain(AnnotationTypes.TimePoint)
-    new_view.new_contain(AnnotationTypes.TimeFrame)
-    return mmif_file
-
-
-def create_document(identifier: str, path: Path) -> Document:
+def create_document(doc_id: str, path: Path) -> Document:
+    # TODO: this should be generalized and deal with all mime types
     doc = Document()
-    doc.id = identifier
+    doc.id = doc_id
+    # TODO: should not just rely on the path
     if 'video' in path.parts:
         doc.at_type = DocumentTypes.VideoDocument
-        doc.add_property('mime', f'video/{path.suffix}')
+        doc.add_property('mime', f'video/{path.suffix[1:]}')
     elif 'text' in path.parts:
         doc.at_type = DocumentTypes.TextDocument
     else:
@@ -88,55 +117,3 @@ def update_source(source_path: Path, asset_path: Path) -> Mmif:
         doc = create_document(identifier, asset_path)
         mmif.documents.append(doc)
     return mmif
-
-
-def run_job(name: str, location, batch, app):
-    print('>>> starting batch process')
-    cmd = ['python', 'run_batch.py', name,
-           '--location', str(location), '--batch', batch, '--app', app]
-    cmd_str = ' '.join(str(p) for p in cmd)
-    with open(location / 'jobs' / name, 'a') as fh:
-        fh.write(f'COMMAND\t{cmd_str}\n')
-    process = subprocess.Popen(cmd, start_new_session=True)
-    time.sleep(1)
-    print('>>> job name   =', name)
-    print('>>> process id =', process.pid)
-    with open(location / 'jobs' / name, 'a') as fh:
-        fh.write(f'PROCESS_ID\t{process.pid}\n')
-    return(process.pid)
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-j', '--job', action='store_true')
-    parser.add_argument('-b', '--batch', default=None)
-    return parser.parse_args()
-
-
-
-if __name__ == '__main__':
-
-    if len(sys.argv) > 1 and sys.argv[1] == '--job':
-        print('>>> running in batch mode')
-        print('>>>', sys.argv)
-        args = parse_arguments()
-        print('>>>', args)
-        run_batch(args)
-
-    if False:
-        
-        path = Path('data/x/sources/aapb-6sEFeLNvHHZf.mmif')
-        source = Mmif(path.read_text())
-        result_swt = run_swt(source, {})
-        result_tokenizer = run_tokenizer(result_swt, {'sleep': 1})
-        result_spacy = run_spacy(result_tokenizer, {})
-        with open('aapb-6sEFeLNvHHZf.mmif', 'w') as fh:
-            fh.write(str(result_spacy))
-
-        data_dir = '/Users/Shared/data/clams/aapb/assets-small'
-        mmif = create_source([
-            Path(f'{data_dir}/video/aapb-B3hpd0cw37bc.txt'),
-            Path(f'{data_dir}/text/aapb-B3hpd0cw37bc.txt')])
-        print(mmif)
-
-

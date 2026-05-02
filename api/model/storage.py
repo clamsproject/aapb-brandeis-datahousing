@@ -12,7 +12,7 @@ from api import STORAGE_DIR
 from api.errors import StorageServerError, UploadWarning
 
 
-def upload_mmif(body: str, overwrite: str = True) -> Path:
+def upload_mmif(body: str, root: str = STORAGE_DIR, overwrite: str = True) -> Path:
 
     """Upload the MMIF file in the body to the MMIF storage. Upload includes 
     writing parameter files for the views. Do not overwrite unless overwrite
@@ -20,10 +20,11 @@ def upload_mmif(body: str, overwrite: str = True) -> Path:
     path of the file written. Raises an UploadWarning for any of the boundary cases
     where an upload will not occur."""
 
+
     mmif = Mmif(body)
-    cur_root = Path(STORAGE_DIR)
+    cur_root = root
     guid = get_guid(mmif)
-    
+
     # Generate the workflow identifier from the MMIF views and retrieve the
     # parameter dictionaries from them, then write the parameter dictionaries
     # to the appropriate directories. The syntax of the path is
@@ -31,6 +32,8 @@ def upload_mmif(body: str, overwrite: str = True) -> Path:
     wfid, param_dicts = generate_workflow_identifier(mmif, return_param_dicts=True)
     write_parameters(cur_root, wfid, param_dicts)
 
+    # Note that the absolute path is not necessarily absolute because cur_root
+    # is allowed to be relative.
     relative_path = Path(wfid) / f'{guid}.mmif'
     absolute_path = cur_root / wfid / f'{guid}.mmif'
 

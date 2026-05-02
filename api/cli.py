@@ -4,47 +4,23 @@ import datetime
 from cmd import Cmd
 from pathlib import Path
 import argparse
+import inspect
+from collections import defaultdict
 
-from rich.console import Console
+from rich import box, prompt
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
-import api
 import api.run
 
+from api.cli_utils import console, messages, COMMANDS, timestamp
+from api.cli_utils import info, warning, error, dribble, bold
 
-console = Console()
 
 shack = None
-
-messages = { 'bye': 'Bye bye sailor'}
-
-
-def log(fun):
-    def wrapper(*args, **kwargs):
-        print(fun.__name__, str(shack))
-        return fun(*args, **kwargs)
-    return wrapper
-
-
-def info(text: str):
-    console.print(Text.assemble(("INFO     ", "bold dark_green"), text))
-
-def warning(text: str):
-    console.print(Text.assemble(("WARNING  ", "bold dark_orange"), text))
-
-def error(text: str):
-    console.print(Text.assemble(("ERROR    ", "bold dark_red"), text))
-
-
-def timestamp() -> str:
-    now = datetime.datetime.now()
-    return now.strftime('%Y-%m-%dT%H:%M:%S')
-
 
 
 class ClamShack:
@@ -62,43 +38,45 @@ class ClamShack:
         self._apps = api.run.APPS
         self._assets = set()
         self._sources = {}
+        self._mmif_files = defaultdict(list)
         self.create_directory_structure()
         self.load_assets()
-        # set the storage dir to match the mmif directory of the shack
-        api.STORAGE_DIR = self.loc_mmif
-        self.path = '.'
+        self.path = self.mmif_dir
+        self._path = Path('.')  # the current working path inside the mmif directory
         self.batch = 'default'
         # Dictionary of batches. The value is a list of identifiers or None, in
         # which case all assets are used.
-        # TODO: should load additional batches from the disk
-        # TODO: maybe we do not need the default in the dictionary
         self.batches = {'default': None}
+        self.jobs = [p for p in self.jobs_dir.iterdir()]
         self.app = None      # selected app for a batch job
-        #self.workflow = []   # selected pipeline for a batch job
+        self.params = {}     # run-time parameters
 
     def create_directory_structure(self):
-        self.loc_assets_list = self.location / 'assets' / 'list.txt'
-        self.loc_assets = self.location / 'assets'
-        self.loc_mmif = self.location / 'mmif'
-        self.loc_batches = self.location / 'batches'
-        self.loc_sources = self.location / 'sources'
-        self.loc_jobs = self.location / 'jobs'
-        if not self.loc_assets_list.exists():
-            for p in (self.location, self.loc_assets, self.loc_mmif,
-                      self.loc_sources, self.loc_jobs):
+        self.assets_file = self.location / 'assets' / 'list.txt'
+        self.assets_dir = self.location / 'assets'
+        self.mmif_dir = self.location / 'mmif'
+        self.batches_dir = self.location / 'batches'
+        self.sources_dir = self.location / 'sources'
+        self.jobs_dir = self.location / 'jobs'
+        if not self.assets_file.exists():
+            for p in (self.location, self.assets_dir, self.mmif_dir,
+                      self.sources_dir, self.jobs_dir):
                 p.mkdir(exist_ok=True)
-            self.loc_assets_list.touch()
+            self.assets_file.touch()
 
     def load_assets(self):
         """Load the asset paths into memory and do the same with the MMIF
         sources."""
-        with open(self.loc_assets_list) as fh:
+        with open(self.assets_file) as fh:
             for line in fh:
                 path = Path(line.strip())
                 if path.is_file():
                     self._assets.add(path)
-        for subpath in self.loc_sources.iterdir():
+        for subpath in self.sources_dir.iterdir():
             self._sources[subpath.stem] = subpath
+        for f in self.mmif_dir.rglob('*'):
+            if f.is_file() and f.suffix == '.mmif':
+                self._mmif_files[f.stem].append(f)
 
     @property
     def assets(self) -> list[Path]:
@@ -111,7 +89,7 @@ class ClamShack:
     @property
     def apps(self):
         return self._apps
-    
+
     @property
     def app_names(self) -> list:
         return list(sorted(self._apps.keys()))
@@ -122,11 +100,15 @@ class ClamShack:
     def search(self, term: str = ''):
         """Search assets, including just the ones that match the search term if
         one was handed in."""
-        # TODO: perhaps expand to include MMIF files
         if not term:
             return self.assets
         else:
-            return [a for a in self.assets if term in str(a.name)]
+            assets = [a for a in self.assets if term in str(a.name)]
+            mmif_files = []
+            for mf in self._mmif_files:
+                if term in mf:
+                    mmif_files.extend(self._mmif_files[mf])
+            return assets + mmif_files
 
     def populate(self, assets_list: str) -> list[str]:
         assets = Path(assets_list)
@@ -140,10 +122,10 @@ class ClamShack:
         return added
 
     def add_asset(self, asset: str):
-        with open(self.loc_assets_list, 'a') as fh:
+        with open(self.assets_file, 'a') as fh:
             fh.write(f'{asset.strip()}\n')
             asset_path = Path(asset.strip())
-            source_path = self.loc_sources / f'{asset_path.stem}.mmif'
+            source_path = self.sources_dir / f'{asset_path.stem}.mmif'
             self._assets.add(asset_path)
             if source_path.exists():
                 source_mmif = api.run.app.update_source(source_path, asset_path)
@@ -155,54 +137,90 @@ class ClamShack:
                 with open(source_path, 'w') as fh:
                     fh.write(mmif.serialize(pretty=True))
 
+    def add_parameter(self, param: str, value):
+        self.params[param] = str(value)
+
     def get_source(self, guid: str):
         pass
 
-    def get_app(self, name: str):
-        return self.apps.get(name)
+    def cwd(self) -> str:
+        return self._path
 
-    def add_app(self, name: str, app):
-        self.apps[name] = app
+    def subdirs(self) -> list[Path]:
+        """Return the sorted subdirectories in the current path."""
+        path = self.mmif_dir / self._path
+        subdirs = [d for d in path.iterdir() if d.is_dir()]
+        #prefix_length = len(self.mmif_dir.parts)
+        #subdirs = [Path(*sd.parts[prefix_length:]) for sd in subdirs]
+        # TODO: actually, no, just take the name, think this through
+        subdirs = [Path(sd.name) for sd in subdirs]
+        return list(sorted(subdirs))
+
+    def files(self) -> list[Path]:
+        """Return the sorted files in the current path."""
+        path = self.mmif_dir / self._path
+        files = [p for p in path.iterdir() if p.is_file()]
+        files = [Path(f.name) for f in files]
+        return list(sorted(files))
+
+    def cd(self, path: str):
+        """Change the current MMIF path. Assumes that the input was vetted by
+        the Shell."""
+        if path == '..':
+            self._path = self._path.parent
+        else:
+            self._path = self._path / path
 
     def run_job(self, name: str):
-        # TODO: also need to add the input, default is going to be the source
-        with open(self.loc_jobs / name, 'w') as fh:
+        with open(self.jobs_dir / name, 'w') as fh:
             fh.write(f'STARTED\t{timestamp()}\n')
-        job_file = self.loc_jobs / name
-        api.run.run_job(name, self.location, self.batch, self.app[0])
+        job_file = self.jobs_dir / name
+        process_id = api.run.run_job(
+            name, self.location, self.cwd(), self.batch, self.app[0], self.params)
+        self.jobs.append(Path(self.jobs_dir / name))
+        return process_id
 
     def show_settings(self):
+        # TODO: should make this return a list of settings
+        app = None if self.app is None else self.app[0]
         assets_count = 0 if self.assets is None else len(self.assets)
-        console.print(Panel('Current settings'))
-        console.print(f' shack     =  {self.location}')
-        console.print(f' assets    =  {assets_count}')
-        console.print(f' sources   =  {len(self.sources)}')
-        console.print(f' batch     =  {shack.batch}')
-        console.print(f' path      =  {shack.path}')
-        if shack.app is not None:
-            console.print(f' selected  =  {shack.app[0]}')
+        console.print(Panel('Current State'))
+        console.print(f' shack       =  {self.location}')
+        console.print(f' assets      =  {assets_count}')
+        console.print(f' sources     =  {len(self.sources)}')
+        console.print(f' jobs        =  {len(self.jobs)}')
+        console.print(f' batch       =  {self.batch}')
+        console.print(f' path        =  {self._path}')
+        console.print(f' clams_app   =  {app}')
+        console.print(f' parameters  =  {self.params}')
         print()
+
+
+def print_command(cmd: str):
+    console.print(Text(cmd, "bold dark_blue"))
 
 
 def print_help(command: str, description: str):
     sep = '  ' if len(command) < 20 else '\n    '
-    command = f'{command:20s}'
     text = Text.assemble((command, "bold dark_blue"), sep, description)
-    console.print(text)
+    console.print('\n', text, '\n')
 
 
-class ClamsShell(Cmd):
+class Shell(Cmd):
 
     """The main shell for the CLAM Shack."""
 
     intro = (
-        '\nThis is the CLAM Shack. Type ? for a list of commands.\n'
-        '\nCommon commands:\n')
-    prompt = 'ClamShack> '
+        '\nThis is the CLAM Shack. Type "commands" for a list of commands.\n')
+    prompt = bold('ClamShack> ')
+
+    # Hidden commands are not advertized to the user when they type 'help',
+    # and there is no help available for them.
+    hidden_commands = {'t', 'tswt', 'tspacy', 'nl', 'new'}
 
     @classmethod
     def set_prompt(cls, shackname: str):
-        cls.prompt = f'ClamShack {shackname}> '
+        cls.prompt = bold(f'ClamShack {shackname}> ')
 
     def __init__(self, shack_location: str | None):
         super().__init__()
@@ -215,7 +233,9 @@ class ClamsShell(Cmd):
 
     def default(self, line):
         """This will apply if no command was recognized."""
-        if line == "q" or line == "EOF":
+        if line.strip() == 'c':
+            pass
+        elif line == "q" or line == "EOF":
             self.do_quit(line)
             return True
         elif line == 's':
@@ -228,25 +248,9 @@ class ClamsShell(Cmd):
             except Exception as e:
                 console.print(e)
         else:
-            print(f'... unknown command: {line.strip().split()[0]}')
+            warning(f'Unknown command: {line.strip().split()[0]}')
 
-    def preloop(self):
-        """Just adds printing the most salient commands to the queue."""
-        self.cmdqueue.append('help init')
-        self.cmdqueue.append('help use')
-        self.cmdqueue.append('help populate')
-        self.cmdqueue.append('help show')
-        self.cmdqueue.append('help quit')
-        self.cmdqueue.append('help search')
-        self.cmdqueue.append('help apps')
-        self.cmdqueue.append('help run')
-        self.cmdqueue.append('nl')
-        if shack is not None:
-            self.cmdqueue.append('prep')
-
-    def do_nl(self, arg):
-        """Print a white line."""
-        print()
+    ## Core actions
 
     def do_quit(self, arg):
         """Exit the CLAM Shack"""
@@ -256,7 +260,7 @@ class ClamsShell(Cmd):
     def do_show(self, arg):
         """Show current settings"""
         if shack is None:
-            print('... Cannot show settings since no CLAM Shack is loaded')
+            warning('Cannot show state since no ClamShack is loaded')
         else:
             shack.show_settings()
 
@@ -266,15 +270,14 @@ class ClamsShell(Cmd):
 
     def do_init(self, arg):
         """Initialize a CLAM Shack at the locations specified."""
-        info(f'Initializing a CLAM Shack at "{arg}"')
         path = Path(arg)
         if path.exists():
-            print('... Cannot initialize, path already exists')
+            warning('Cannot initialize, path already exists')
         else:
             global shack
             shack = ClamShack(arg)
             self.set_prompt(path.stem)
-            print('... Done')
+            info(f'Initialized a CLAM Shack at "{arg}"')
 
     def do_use(self, arg):
         """Use the specified CLAM Shack"""
@@ -286,7 +289,7 @@ class ClamsShell(Cmd):
             global shack
             shack = ClamShack(path)
             self.set_prompt(path.name)
-            info(f'Now using the CLAM Shack at {arg}')
+            print()
 
     def do_populate(self, arg):
         """Import a list of assets."""
@@ -301,31 +304,121 @@ class ClamsShell(Cmd):
             warning(f'The file provided does not exist')
 
     def do_apps(self, arg):
+        if shack is None:
+            warning("Cannot print or select apps when no Shack is loaded.")
+            return
+        app_dict = dict(enumerate(shack.app_names))
         if not arg:
-            console.print(shack.app_names)
+            console.print(Panel('Registered CLAMS Apps'))
+            for key in sorted(app_dict):
+                console.print(f' {key}: {app_dict[key]}')
+            print()
         else:
-            args = arg.split()
-            if args[0] == 'select':
-                apps = list(sorted(shack.apps.keys()))
-                if len(args) >= 2:
-                    if args[1] in apps:
-                        selection = args[1]
-                else:
-                    selection = Prompt.ask('Select an app', choices=apps, default=None)
-                if selection is None:
-                    warning(f'No CLAMS app was selected')
-                else:
-                    shack.app = (selection, shack.apps[selection])
-                    info(f'Selected {selection}')
-                    #shack.workflow.append((selection, APPS[selection]))
-                    #console.print(f'... Added {selection} to workflow')
+            selection = arg
+            if selection.isnumeric():
+                selection = app_dict.get(int(selection))
+            if selection in shack.apps:
+                shack.app = (selection, shack.apps[selection])
+                dribble(f'Selected {selection}\n')
+            else:
+                warning(f'Selection does not exist\n')
+
+    def do_jobs(self, arg):
+        console.print(Panel('List of jobs associated with this Shack'))
+        table = Table('name', 'started', 'app', 'batch', box=box.ROUNDED)
+        for job in sorted(shack.jobs):
+            lines = job.read_text().split('\n')
+            started = lines[0].split('\t')[1]
+            command = lines[1].split('\t')[1].split()
+            # not including 'python', 'run_batch.py' and the name of the job
+            command = command[3:]
+            n = 2
+            pairs = [command[i : i + n] for i in range(0, len(command), n)]
+            # the parameters at the end do funky stuff
+            pairs = [p for p in pairs if len(p) == 2]
+            for pair in pairs:
+                param, value = pair
+                if param == '--app':
+                    app = value
+                if param == '--batch':
+                    batch = value
+            table.add_row(job.name, started, app, batch)
+        console.print(table)
+
+    def do_params(self, arg):
+        args = arg.split()
+        if len(args) == 1 and args[0] == 'reset':
+            shack.params = {}
+        elif len(args) == 2:
+            param, value = args
+            shack.add_parameter(param, value)
+        console.print(shack.params)
+        print()
 
     def do_run(self, arg):
-        info('Starting job')
-        info(f'  name  = {arg}')
-        info(f'  batch = {shack.batch}')
-        info(f'  app   = {shack.app[0]}')
-        shack.run_job(arg)
+        if not arg:
+            warning('You must provide a name for the job.')
+            return
+        job_file = shack.jobs_dir / arg
+        if job_file.is_file():
+            warning('A job with that name already exists.')
+            return
+        if shack.cwd() != Path('.'):
+            files = [Path(f.name) for f in shack.files() if f.suffix == '.mmif']
+            if not files:
+                print('Nothing to do, there are no MMIF files in the current path\n')
+                return
+        console.print(Panel('Starting job'))
+        dribble(f'  name   = {arg}')
+        dribble(f'  path   = {shack.cwd()}')
+        dribble(f'  batch  = {shack.batch}')
+        dribble(f'  app    = {shack.app[0]}')
+        dribble(f'  params = {shack.params}')
+        process_id = shack.run_job(arg)
+        dribble(f'  pid    = {process_id}')
+
+    def do_pwd(self, arg):
+        console.print(shack.cwd())
+        print()
+
+    def do_dir(self, arg):
+        console.print(Panel(f'Sub directories at "{shack.cwd()}"'))
+        for n, d in enumerate(shack.subdirs()):
+            console.print(f' {n}: {str(d)}')
+        print()
+
+    def do_files(self, arg):
+        console.print(Panel(f'MMIF files at "{shack.cwd()}"'))
+        for n, f in enumerate(shack.files()):
+            console.print(f' {n}: {str(f)}')
+        print()
+
+    def do_cd(self, arg):
+        subdirs = { n: str(p) for n, p in enumerate(shack.subdirs()) }
+        if arg.isnumeric() and int(arg) in subdirs:
+            arg = subdirs[int(arg)]
+        p = Path(shack.mmif_dir / shack.cwd() / arg)
+        if p.exists():
+            shack.cd(arg)
+            console.print(f'New path: {shack.cwd()}\n')
+        else:
+            print('No such directory\n')
+
+    def do_help(self, arg):
+        if not arg:
+            funs = inspect.getmembers(self.__class__, predicate=inspect.isfunction)
+            names = [name[3:] for name, method in funs if name .startswith('do_')]
+            names = [n for n in names if not n in self.hidden_commands]
+            console.print(Panel('Available commands'))
+            for cmd in names:
+                print_command(' ' + cmd)
+            console.print('\n Type "help <command>" for help on a command\n')
+        elif arg in COMMANDS:
+            print_help(*COMMANDS.get(arg))
+        else:
+            print(f'No help available for {arg}\n') 
+
+    ## Undocumented actions for debugging and development
 
     def do_new(self, arg):
         """Staging method for new functionality."""
@@ -336,42 +429,35 @@ class ClamsShell(Cmd):
         t.add_row('assets', str(len(shack.assets)))
         console.print(t,'<ole>', 23, '\n')
         guid = 'aapb-cneiustLEBiC'
-        p = shack.loc_sources / f'{guid}.mmif'
+        p = shack.sources_dir / f'{guid}.mmif'
         with open(p) as fh:
             console.print(str(p), Syntax(p.read_text(), 'json'))
         print()
-        print('>>>', api.STORAGE_DIR)
 
-    def do_prep(self, arg):
-        """Convenience method to set up some things for current development."""
-        self.cmdqueue.append('apps select spacy-v3')
-        self.cmdqueue.append('run test')
+    def do_tspacy(self, arg):
+        """Command to run commands that I am testing, for development only."""
+        self.cmdqueue.append('use data/test')
+        self.cmdqueue.append('apps select http://apps.clams.ai/spacy/v3')
+        self.cmdqueue.append(f'run {arg}')
 
-    def help_quit(self):
-        print_help('quit', 'Exit the CLAM Shack')
+    def do_tswt(self, arg):
+        """Command to run commands that I am testing, for development only."""
+        self.cmdqueue.append('use data/test')
+        self.cmdqueue.append('apps select http://apps.clams.ai/swt/v7.0')
+        self.cmdqueue.append('params pretty True')
+        self.cmdqueue.append('params sticther True')
+        self.cmdqueue.append(f'run {arg}')
 
-    def help_show(self):
-        print_help('show', 'Show current settings')
+    def do_t(self, arg):
+        self.cmdqueue.append('p spacy/v3')
+        self.cmdqueue.append('p spacy/v3/5fe49d06725497b274b6eaaf0fe0c5d2')
+        self.cmdqueue.append('p spacy/v3/5fe49d06725497b274b6eaaf0fe0c5d2.json')
+        self.cmdqueue.append('p spacy/v3/d41d8cd98f00b204e9800998ecf8427e') 
+        self.cmdqueue.append('p spacy/v3/d41d8cd98f00b204e9800998ecf8427e.json') 
 
-    def help_init(self):
-        print_help('init DIRECTORY', 'Initialize a CLAM Shack in DIRECTORY.')
-
-    def help_use(self):
-        print_help('use DIRECTORY', 'Use the CLAM Shack in DIRECTORY')
-
-    def help_populate(self):
-        print_help('populate FILENAME', 'Add paths from the file as assets to the Shack ')
-
-    def help_search(self):
-        print_help('search TERM', 'Search assets that match TERM')
-
-    def help_apps(self):
-        print_help('apps select?', 'List available CLAM apps or select an app')
-
-    def help_run(self):
-        print_help(
-            'run NAME',
-            'Run a job under a unique name, assumes you selected an app')
+    def do_nl(self, arg):
+        """Print a white line."""
+        print()
 
 
 def parse_arguments():
@@ -386,4 +472,4 @@ if __name__ == '__main__':
     args = parse_arguments()
     if args.debug:
         DEBUG = True
-    ClamsShell(args.shack).cmdloop()
+    Shell(args.shack).cmdloop()

@@ -18,8 +18,8 @@ assets_dir.mkdir(exist_ok=True)
 
 
 def generate_random_string(length):
-    # Characters to choose from (letters and digits)
-    characters = string.ascii_letters + string.digits
+    # Using lower case letters and digits to meet AAPB identifier syntax
+    characters = string.ascii_lowercase + string.digits
     # Generate and join random characters
     return ''.join(random.choices(characters, k=length))
 
