@@ -73,7 +73,7 @@ def run_app(name: str, mmif_file: Mmif, params: dict, types: list):
     for param, value in params.items():
         new_view.metadata.add_parameter(param, str(value))
     # faking that it is taking some time
-    time.sleep(1)
+    time.sleep(5)
     return mmif_file
 
 

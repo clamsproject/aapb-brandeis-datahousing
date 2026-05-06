@@ -20,8 +20,13 @@ assets_dir.mkdir(exist_ok=True)
 def generate_random_string(length):
     # Using lower case letters and digits to meet AAPB identifier syntax
     characters = string.ascii_lowercase + string.digits
-    # Generate and join random characters
-    return ''.join(random.choices(characters, k=length))
+    # Generate and join random characters, but make sure there is at least
+    # one digit in it. GUIDs always have at least one, without it the code
+    # will consider the entire GUID to be a meaningful suffix.
+    while True:
+    	s = ''.join(random.choices(characters, k=length))
+    	if any(char.isdigit() for char in s):
+    		return s
 
 
 guids = [generate_random_string(12) for i in range(10)]

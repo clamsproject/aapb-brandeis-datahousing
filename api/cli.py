@@ -16,7 +16,7 @@ from rich.syntax import Syntax
 
 import api.run
 
-from api.cli_utils import console, messages, COMMANDS, timestamp
+from api.cli_utils import Job, console, messages, COMMANDS, timestamp
 from api.cli_utils import info, warning, error, dribble, bold
 
 
@@ -47,7 +47,7 @@ class ClamShack:
         # Dictionary of batches. The value is a list of identifiers or None, in
         # which case all assets are used.
         self.batches = {'default': None}
-        self.jobs = [p for p in self.jobs_dir.iterdir()]
+        self._jobs = [p for p in self.jobs_dir.iterdir()]
         self.app = None      # selected app for a batch job
         self.params = {}     # run-time parameters
 
@@ -94,21 +94,41 @@ class ClamShack:
     def app_names(self) -> list:
         return list(sorted(self._apps.keys()))
 
+    @property
+    def job_names(self):
+        return [p.name for p in self._jobs]
+
+    @property
+    def jobs(self):
+        """Recreate jobs from the list of paths each time you access this propery,
+        this makes sure updates from long running jobs are included."""
+        return [Job(path) for path in self._jobs]
+
     def __str__(self):
         return f'<ClamShack "{self.location}" assets={len(self.assets)}>'
 
-    def search(self, term: str = ''):
-        """Search assets, including just the ones that match the search term if
-        one was handed in."""
-        if not term:
-            return self.assets
-        else:
-            assets = [a for a in self.assets if term in str(a.name)]
+    def search(self, guid: str = '', app: str = '') -> list:
+        """Search assets and MMIF files."""
+        if guid:
+            assets = [a for a in self.assets if guid in str(a.name)]
             mmif_files = []
             for mf in self._mmif_files:
-                if term in mf:
+                if guid in mf:
                     mmif_files.extend(self._mmif_files[mf])
             return assets + mmif_files
+        elif app:
+            # TODO: this is very ugly, at least properly parse the path or build
+            # some kind of index, it does not hurt on a small Shack though
+            paths = set()
+            for mf in self._mmif_files:
+                for path in self._mmif_files[mf]:
+                    for part in path.parts:
+                        if app == part:
+                            paths.add(path.parent)
+                            break
+            return list(sorted(paths))
+        else:
+            return []
 
     def populate(self, assets_list: str) -> list[str]:
         assets = Path(assets_list)
@@ -177,7 +197,7 @@ class ClamShack:
         job_file = self.jobs_dir / name
         process_id = api.run.run_job(
             name, self.location, self.cwd(), self.batch, self.app[0], self.params)
-        self.jobs.append(Path(self.jobs_dir / name))
+        self._jobs.append(Path(self.jobs_dir / name))
         return process_id
 
     def show_settings(self):
@@ -188,12 +208,11 @@ class ClamShack:
         console.print(f' shack       =  {self.location}')
         console.print(f' assets      =  {assets_count}')
         console.print(f' sources     =  {len(self.sources)}')
-        console.print(f' jobs        =  {len(self.jobs)}')
+        console.print(f' jobs        =  {len(self._jobs)}')
         console.print(f' batch       =  {self.batch}')
         console.print(f' path        =  {self._path}')
         console.print(f' clams_app   =  {app}')
         console.print(f' parameters  =  {self.params}')
-        print()
 
 
 def print_command(cmd: str):
@@ -216,7 +235,7 @@ class Shell(Cmd):
 
     # Hidden commands are not advertized to the user when they type 'help',
     # and there is no help available for them.
-    hidden_commands = {'t', 'tswt', 'tspacy', 'nl', 'new'}
+    hidden_commands = {'t', 'tswt', 'tspacy', 'pspacy', 'nl', 'new'}
 
     @classmethod
     def set_prompt(cls, shackname: str):
@@ -250,6 +269,10 @@ class Shell(Cmd):
         else:
             warning(f'Unknown command: {line.strip().split()[0]}')
 
+    def postcmd(self, stop, line):
+        print()
+        return stop
+
     ## Core actions
 
     def do_quit(self, arg):
@@ -265,7 +288,17 @@ class Shell(Cmd):
             shack.show_settings()
 
     def do_search(self, arg):
-        assets = shack.search(arg)
+        if not arg:
+            warning('No search parameters given')
+            return
+        search_type, *args = arg.split()
+        if search_type == 'guid':
+            assets = shack.search(guid=args[0])
+        elif search_type == 'app':
+            assets = shack.search(app=args[0])
+        else:
+            warning(f'Cannot search for "{arg}", use "guid" or "app"')
+            return
         console.print([str(a) for a in assets])
 
     def do_init(self, arg):
@@ -312,37 +345,27 @@ class Shell(Cmd):
             console.print(Panel('Registered CLAMS Apps'))
             for key in sorted(app_dict):
                 console.print(f' {key}: {app_dict[key]}')
-            print()
         else:
             selection = arg
             if selection.isnumeric():
                 selection = app_dict.get(int(selection))
             if selection in shack.apps:
                 shack.app = (selection, shack.apps[selection])
-                dribble(f'Selected {selection}\n')
+                dribble(f'Selected {selection}')
             else:
-                warning(f'Selection does not exist\n')
+                warning(f'Selection does not exist')
 
     def do_jobs(self, arg):
         console.print(Panel('List of jobs associated with this Shack'))
-        table = Table('name', 'started', 'app', 'batch', box=box.ROUNDED)
-        for job in sorted(shack.jobs):
-            lines = job.read_text().split('\n')
-            started = lines[0].split('\t')[1]
-            command = lines[1].split('\t')[1].split()
-            # not including 'python', 'run_batch.py' and the name of the job
-            command = command[3:]
-            n = 2
-            pairs = [command[i : i + n] for i in range(0, len(command), n)]
-            # the parameters at the end do funky stuff
-            pairs = [p for p in pairs if len(p) == 2]
-            for pair in pairs:
-                param, value = pair
-                if param == '--app':
-                    app = value
-                if param == '--batch':
-                    batch = value
-            table.add_row(job.name, started, app, batch)
+        table = Table('started', 'name', 'app', 'batch', 'guids', 'time', box=box.ROUNDED)
+        for job in sorted(shack.jobs, key=lambda x: x.started, reverse=False):
+            started = job.started.isoformat()
+            finished = '' 
+            if job.finished is None:
+                delta = 'in-progress'
+            else:
+                delta = str(int((job.finished - job.started).total_seconds())) + ' seconds'
+            table.add_row(started, job.name, job.app, job.batch, str(len(job.guids)), delta)
         console.print(table)
 
     def do_params(self, arg):
@@ -353,7 +376,6 @@ class Shell(Cmd):
             param, value = args
             shack.add_parameter(param, value)
         console.print(shack.params)
-        print()
 
     def do_run(self, arg):
         if not arg:
@@ -366,7 +388,7 @@ class Shell(Cmd):
         if shack.cwd() != Path('.'):
             files = [Path(f.name) for f in shack.files() if f.suffix == '.mmif']
             if not files:
-                print('Nothing to do, there are no MMIF files in the current path\n')
+                print('Nothing to do, there are no MMIF files in the current path')
                 return
         console.print(Panel('Starting job'))
         dribble(f'  name   = {arg}')
@@ -400,9 +422,9 @@ class Shell(Cmd):
         p = Path(shack.mmif_dir / shack.cwd() / arg)
         if p.exists():
             shack.cd(arg)
-            console.print(f'New path: {shack.cwd()}\n')
+            console.print(f'New path: {shack.cwd()}')
         else:
-            print('No such directory\n')
+            print('No such directory')
 
     def do_help(self, arg):
         if not arg:
@@ -412,11 +434,11 @@ class Shell(Cmd):
             console.print(Panel('Available commands'))
             for cmd in names:
                 print_command(' ' + cmd)
-            console.print('\n Type "help <command>" for help on a command\n')
+            console.print('\n Type "help <command>" for help on a command')
         elif arg in COMMANDS:
             print_help(*COMMANDS.get(arg))
         else:
-            print(f'No help available for {arg}\n') 
+            print(f'No help available for {arg}')
 
     ## Undocumented actions for debugging and development
 
@@ -448,12 +470,13 @@ class Shell(Cmd):
         self.cmdqueue.append('params sticther True')
         self.cmdqueue.append(f'run {arg}')
 
-    def do_t(self, arg):
+    def do_pspacy(self, arg):
         self.cmdqueue.append('p spacy/v3')
-        self.cmdqueue.append('p spacy/v3/5fe49d06725497b274b6eaaf0fe0c5d2')
-        self.cmdqueue.append('p spacy/v3/5fe49d06725497b274b6eaaf0fe0c5d2.json')
         self.cmdqueue.append('p spacy/v3/d41d8cd98f00b204e9800998ecf8427e') 
         self.cmdqueue.append('p spacy/v3/d41d8cd98f00b204e9800998ecf8427e.json') 
+
+    def do_t(self, arg):
+        self.cmdqueue.append('search app spacy')
 
     def do_nl(self, arg):
         """Print a white line."""

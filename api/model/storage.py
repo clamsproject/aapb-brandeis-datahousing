@@ -15,11 +15,9 @@ from api.errors import StorageServerError, UploadWarning
 def upload_mmif(body: str, root: str = STORAGE_DIR, overwrite: str = True) -> Path:
 
     """Upload the MMIF file in the body to the MMIF storage. Upload includes 
-    writing parameter files for the views. Do not overwrite unless overwrite
-    existing files on the storage unless overwrite is True. Returns the relative
-    path of the file written. Raises an UploadWarning for any of the boundary cases
-    where an upload will not occur."""
-
+    writing parameter files for the views. Do not overwrite unless overwrite is
+    True. Returns the relative path of the file written. Raises an UploadWarning
+    for any of the boundary cases where an upload will not occur."""
 
     mmif = Mmif(body)
     cur_root = root

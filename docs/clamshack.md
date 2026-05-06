@@ -49,10 +49,11 @@ Other things to do:
 
 ### Search
 
-- Now searching the assets, should search the sources?
-- For search we may want to include search for MMIF files
-- Also allow search of workflows to start halfway through (that is, we should find a spacy resulteven if it is not the first one in a workflow).
-- Should not present the full path of MMIF files.
+Distinguish between several kinds of search.
+
+- Asset search on GUIDs. This is already implemented.
+- MMIF file search on GUIDs, apps and workflow properties. The first could be folded into the asset search. On apps and/or workflow properties we should search every part of the workflow, for example, a spaCy result is still a spaCy result if it is in the last step of a workflow.
+- A mix of search inputs, for example GUIDs and apps.
 
 
 ### Batches

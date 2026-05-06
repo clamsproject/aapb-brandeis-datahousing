@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 from rich import box, console, prompt
 from rich.panel import Panel
 from rich.text import Text
@@ -12,6 +12,8 @@ messages = { 'bye': 'Bye bye sailor'}
 
 COMMANDS = {
 
+    'help': ('help', 'Print available commands or help for a command'),
+
     'apps': (
         'apps\n apps (APP_INDEX | APP_NAME)',
         'List available CLAMS apps or select an app by index or name.'),
@@ -19,6 +21,8 @@ COMMANDS = {
     'run': (
         'run NAME',
         'Run a job under a unique name, assumes you selected an app.'),
+
+    'jobs': ('jobs', 'Print list of jobs associated with the Shack'),
 
     'params': (
         'params\n params reset\n params PARAM VALUE',
@@ -34,10 +38,58 @@ COMMANDS = {
 
     'show': ('show', 'Show current settings.'),
 
+    'pwd': ('pwd', 'Print the current path in the MMIF storage'),
+
+    'dir': ('dir', 'Print the directories at the current path'),
+
+    'files': ('files', 'Print the files at the current path'),
+
+    'cd': (
+        'cd PATH | INDEX',
+        'Change the current path in the MMIF storage, either by spelling out the'
+        ' path or by giving an index from the dir command'),
+
     'quit': ('quit', 'Exit the ClamShack.'),
 
     'search': ('search TERM', 'Search assets that match TERM.'),
 }
+
+
+class Job:
+
+    def __init__(self, path):
+        self.name = path.name
+        self.path = path
+        self.app = None
+        self.batch = None
+        lines = path.read_text().split('\n')
+        self.started = datetime.fromisoformat(lines[0].split('\t')[1])
+        self.finished = None
+        command = lines[1].split('\t')[1].split()
+        # not including 'python', 'run_batch.py' and the name of the job
+        self.command = command[3:]
+        self.pid = lines[2].split('\t')[1]
+        n = 2
+        pairs = [self.command[i : i + n] for i in range(0, len(command), n)]
+        # the parameters at the end do funky stuff so only taking the pairs
+        pairs = [p for p in pairs if len(p) == 2]
+        for pair in pairs:
+            param, value = pair
+            if param == '--app':
+                self.app = value
+            if param == '--batch':
+                self.batch = value
+        self.guids = []
+        for line in lines[3:]:
+            if line:
+                fields = line.strip().split()
+                if fields[0] == 'GUID':
+                    self.guids.append(fields[1:4])
+                elif fields[0] == 'DONE':
+                    self.finished = datetime.fromisoformat(fields[1])
+
+    def __str__(self):
+        return f'<Job {self.started} {self.finished} {self.name} app={self.app} batch={self.batch}'
 
 
 def log(fun):
@@ -73,5 +125,5 @@ def bold(text: str) -> str:
 
 
 def timestamp() -> str:
-    now = datetime.datetime.now()
+    now = datetime.now()
     return now.strftime('%Y-%m-%dT%H:%M:%S')
