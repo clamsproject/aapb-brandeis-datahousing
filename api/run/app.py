@@ -27,7 +27,7 @@ from mmif.serialize.annotation import Annotation, Document
 import api
 
 
-def run_job(name: str, location: Path, path: Path, batch: str, app: str, params: dict):
+def run_job(name: str, location: Path, path: Path, batch: str, app: tuple, params: dict):
     # TODO: consider handing it the ClamShack instance
     # TODO: consider putting this code on ClamShack
     param_string = json.dumps(params)
@@ -35,7 +35,8 @@ def run_job(name: str, location: Path, path: Path, batch: str, app: str, params:
            '--location', str(location),
            '--path', str(path),
            '--batch', batch,
-           '--app', app,
+           '--app-name', app.name,
+           '--app-url', app.url,
            '--params', param_string]
     cmd_str = ' '.join(str(p) for p in cmd)
     with open(location / 'jobs' / name, 'a') as fh:
@@ -44,37 +45,6 @@ def run_job(name: str, location: Path, path: Path, batch: str, app: str, params:
     with open(location / 'jobs' / name, 'a') as fh:
         fh.write(f'PROCESS_ID\t{process.pid}\n')
     return(process.pid)
-
-
-def run_tokenizer(mmif_file: Mmif, params: dict) -> Mmif:
-    atypes = [AnnotationTypes.Token]
-    return run_app('http://apps.clams.ai/tokenizer/v1', mmif_file, params, atypes)
-
-
-def run_spacy(mmif_file: Mmif, params: dict) -> Mmif:
-    atypes = [AnnotationTypes.Token, AnnotationTypes.NamedEntity]
-    return run_app('http://apps.clams.ai/spacy/v3', mmif_file, params, atypes)
-
-
-def run_swt(mmif_file: Mmif, params: dict):
-    atypes = [AnnotationTypes.TimePoint, AnnotationTypes.TimeFrame]
-    return run_app('http://apps.clams.ai/swt/v7.0', mmif_file, params, atypes)
-
-
-def run_app(name: str, mmif_file: Mmif, params: dict, types: list):
-    # doing this to make it fail once in a while so we can see what happens
-    if Random().choice('abc') == 'a':
-        raise Exception('Randomly generated exception')
-    new_view = mmif_file.new_view()
-    new_view.metadata.app = name
-    for t in types:
-        new_view.new_contain(t)
-        new_view.new_contain(AnnotationTypes.NamedEntity)
-    for param, value in params.items():
-        new_view.metadata.add_parameter(param, str(value))
-    # faking that it is taking some time
-    time.sleep(5)
-    return mmif_file
 
 
 def create_document(doc_id: str, path: Path) -> Document:
@@ -94,7 +64,7 @@ def create_document(doc_id: str, path: Path) -> Document:
 
 
 def create_source(docs: list[Path]) -> Mmif:
-    """Creates a MMIF sources from a list of document paths. This assumes it is
+    """Creates a MMIF source from a list of document paths. This assumes it is
     possible to generate a document type from each path."""
     mmif = Mmif()
     for i, path in enumerate(docs):

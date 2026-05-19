@@ -134,28 +134,30 @@ class ClamShack:
         assets = Path(assets_list)
         added = []
         with open(assets) as fh:
+            directory = fh.readline().strip()
             for line in fh:
                 path = line.strip()
-                if Path(path).is_file():
-                    added.append(path)
-                    self.add_asset(path)
+                full_path = Path(directory) / path
+                container_path = Path('/data') / path
+                if full_path.is_file():
+                    self.add_asset(str(full_path), str(container_path))
+                    added.append(container_path)
         return added
 
-    def add_asset(self, asset: str):
+    def add_asset(self, c_asset: str, asset: str):
         with open(self.assets_file, 'a') as fh:
-            fh.write(f'{asset.strip()}\n')
+            fh.write(f'{c_asset.strip()}\n')
             asset_path = Path(asset.strip())
             source_path = self.sources_dir / f'{asset_path.stem}.mmif'
             self._assets.add(asset_path)
             if source_path.exists():
                 source_mmif = api.run.app.update_source(source_path, asset_path)
-                with open(source_path, 'w') as fh:
-                    fh.write(source_mmif.serialize(pretty=True))
             else:
                 self._sources[source_path.stem] = source_path
-                mmif = api.run.app.create_source([asset_path])
-                with open(source_path, 'w') as fh:
-                    fh.write(mmif.serialize(pretty=True))
+                source_mmif = api.run.app.create_source([asset_path])
+            with open(source_path, 'w') as fh:
+                fh.write(source_mmif.serialize(pretty=True))
+
 
     def add_parameter(self, param: str, value):
         self.params[param] = str(value)
@@ -196,13 +198,13 @@ class ClamShack:
             fh.write(f'STARTED\t{timestamp()}\n')
         job_file = self.jobs_dir / name
         process_id = api.run.run_job(
-            name, self.location, self.cwd(), self.batch, self.app[0], self.params)
+            name, self.location, self.cwd(), self.batch, self.app, self.params)
         self._jobs.append(Path(self.jobs_dir / name))
         return process_id
 
     def show_settings(self):
         # TODO: should make this return a list of settings
-        app = None if self.app is None else self.app[0]
+        app = None if self.app is None else self.app.name
         assets_count = 0 if self.assets is None else len(self.assets)
         console.print(Panel('Current State'))
         console.print(f' shack       =  {self.location}')
@@ -332,7 +334,7 @@ class Shell(Cmd):
             warning(f'Need to select (use) or initialize (init) a shack first')
         elif assets_list.is_file():
             added = shack.populate(assets_list)
-            info(f'Done, added {len(added)} paths')
+            info(f'Done, added {len(added)} assets')
         else:
             warning(f'The file provided does not exist')
 
@@ -350,10 +352,13 @@ class Shell(Cmd):
             if selection.isnumeric():
                 selection = app_dict.get(int(selection))
             if selection in shack.apps:
-                shack.app = (selection, shack.apps[selection])
+                shack.app = api.run.ClamsApp(selection, shack.apps[selection])
                 dribble(f'Selected {selection}')
             else:
                 warning(f'Selection does not exist')
+
+    def do_register(self, arg):
+        api.run.register_app(arg)
 
     def do_jobs(self, arg):
         console.print(Panel('List of jobs associated with this Shack'))
@@ -394,7 +399,7 @@ class Shell(Cmd):
         dribble(f'  name   = {arg}')
         dribble(f'  path   = {shack.cwd()}')
         dribble(f'  batch  = {shack.batch}')
-        dribble(f'  app    = {shack.app[0]}')
+        dribble(f'  app    = {shack.app}')
         dribble(f'  params = {shack.params}')
         process_id = shack.run_job(arg)
         dribble(f'  pid    = {process_id}')
@@ -476,8 +481,21 @@ class Shell(Cmd):
         self.cmdqueue.append('p spacy/v3/d41d8cd98f00b204e9800998ecf8427e.json') 
 
     def do_t(self, arg):
-        self.cmdqueue.append('search app spacy')
+        #self.cmdqueue.append('search app spacy')
+        api.run.register_app('http://127.0.0.1:5001')
+        self.cmdqueue.append('apps 0')
+        self.cmdqueue.append('params pretty True')
 
+    def do_x(self, arg):
+        self.cmdqueue.append(f'init x')
+        self.cmdqueue.append('p assets.txt')
+        self.cmdqueue.append('register http://127.0.0.1:5001')
+        self.cmdqueue.append('apps 0')
+        self.cmdqueue.append('params pretty True')
+        self.cmdqueue.append('s')
+        self.cmdqueue.append('shack.assets')
+
+        
     def do_nl(self, arg):
         """Print a white line."""
         print()

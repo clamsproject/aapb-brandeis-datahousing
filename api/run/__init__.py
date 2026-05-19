@@ -8,11 +8,44 @@ to a app name. At the moment it just registers a couple of fake apps.
 
 """
 
-from api.run.app import run_tokenizer, run_spacy, run_swt
+import json
+import requests
+
+from mmif import Mmif
+
 from api.run.app import run_job
 
-APPS = {
-	"http://apps.clams.ai/tokenizer/v1": run_tokenizer,
-	"http://apps.clams.ai/spacy/v3": run_spacy,
-	"http://apps.clams.ai/swt/v7.0": run_swt
-}
+
+APPS = {}
+
+
+class ClamsApp:
+
+    def __init__(self, name: str, url: str):
+        self.name = name
+        self.url = url
+
+    def __str__(self):
+        return f'<ClamsApp {self.name} at {self.url}>'
+
+    def metadata(self) -> dict:
+        metadata = requests.get(self.url)
+        #print(json.dumps(metadata.json(), indent=2))
+        return metadata.json()
+
+    def run(self, mmif_in: Mmif, params: str) -> Mmif:
+        response = requests.post(self.url, data=mmif_in.serialize(), params=json.loads(params))
+        return Mmif(response.json())
+
+
+def register_app(url: str):
+	try:
+		result = requests.get(url=url, params={}, timeout=5)
+		data = result.json()
+		app_id = data['identifier']
+		print(f'Registered {app_id}')
+		APPS[app_id] = url
+	except requests.exceptions.ConnectTimeout:
+		print('Connection timeout')
+	except Exception:
+		print('Unexpected output')

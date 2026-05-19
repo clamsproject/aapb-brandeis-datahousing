@@ -1,19 +1,16 @@
 import json
 import time
+import requests
 import argparse
 from pathlib import Path
-
-from rich.console import Console
 
 from mmif import Mmif
 
 import api
-from api import run
 from api.cli import ClamShack, timestamp
 from api.model.storage import upload_mmif
-
-
-console = Console()
+from api.run import ClamsApp
+from api.errors import UploadWarning
 
 
 def main(args):
@@ -22,8 +19,9 @@ def main(args):
 
     ## Get a ClamShack and set the app and the batch
     shack = ClamShack(args.location)
-    shack.app = (args.app, shack.apps[args.app])
+    shack.app = (args.app_name, args.app_url)
     shack.batch = args.batch
+    shack.app2 = ClamsApp(args.app_name, args.app_url)
 
     ## Get the input to run on, for now only deals with the default batch, also
     ## need to deal with non-source input.
@@ -38,19 +36,22 @@ def main(args):
         t0 = time.time()
         try:
             mmif_in = Mmif(source.read_text())
-            mmif_out = shack.app[1](mmif_in, json.loads(args.params))
+            mmif_out = shack.app2.run(mmif_in, args.params)
             serialized_mmif = mmif_out.serialize(pretty=True)
             path = upload_mmif(serialized_mmif, root=shack.mmif_dir)
             message = 'SUCCES'
-            #break
+        except UploadWarning as e:
+            message = f'ERROR: {e}'
         except Exception as e:
             message = f'ERROR: {e}'
+            raise e
         time_elapsed = time.time() - t0
         with open(jobs_file, 'a') as fh:
             fh.write(f'GUID\t{source.stem}\t{time_elapsed:2.4f}\t{message}\n')
-        #break
     with open(jobs_file, 'a') as fh:
         fh.write(f'DONE\t{timestamp()}\n')
+
+
 
 
 def arg_parser():
@@ -59,7 +60,8 @@ def arg_parser():
     parser.add_argument('--location')
     parser.add_argument('--path')
     parser.add_argument('--batch', default=None)
-    parser.add_argument('--app', default=None)
+    parser.add_argument('--app-name', default=None)
+    parser.add_argument('--app-url', default=None)
     parser.add_argument('--params', default={})
     return parser
 
