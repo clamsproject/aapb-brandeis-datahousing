@@ -18,7 +18,7 @@ def main(args):
     jobs_file = Path(args.location) / 'jobs' / args.name
 
     ## Get a ClamShack and set the app and the batch
-    shack = ClamShack(args.location)
+    shack = ClamShack(args.location, None)
     shack.app = (args.app_name, args.app_url)
     shack.batch = args.batch
     shack.app2 = ClamsApp(args.app_name, args.app_url)
@@ -50,8 +50,6 @@ def main(args):
             fh.write(f'GUID\t{source.stem}\t{time_elapsed:2.4f}\t{message}\n')
     with open(jobs_file, 'a') as fh:
         fh.write(f'DONE\t{timestamp()}\n')
-
-
 
 
 def arg_parser():

@@ -28,14 +28,6 @@ COMMANDS = {
         'params\n params reset\n params PARAM VALUE',
         'Print all parameters, reset all parameters or add/change a parameter'),
 
-    'init': ('init DIRECTORY', 'Initialize a CLAM Shack in DIRECTORY.'),
-
-    'populate': (
-        'populate FILENAME',
-        'Add paths from the file as assets to the Shack.'),
-
-    'use': ('use DIRECTORY', 'Use the CLAM Shack in DIRECTORY.'),
-
     'show': ('show', 'Show current settings.'),
 
     'pwd': ('pwd', 'Print the current path in the MMIF storage'),
@@ -51,7 +43,9 @@ COMMANDS = {
 
     'quit': ('quit', 'Exit the ClamShack.'),
 
-    'search': ('search TERM', 'Search assets that match TERM.'),
+    'search': (
+        'search guid TERM\n search app TERM',
+        'Search for assets and mmif files matchng a GUID or an app name.'),
 }
 
 

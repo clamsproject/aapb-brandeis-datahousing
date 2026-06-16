@@ -8,9 +8,6 @@ This module takes care of running CLAMS Apps. The main functionality is:
 The latter is done here because the code in mmif.utils.cli.source was so complex
 that it was easier to recreate it here than figure out how to use it properly.
 
-In addition, this module contains a couple of fake apps for quick development
-cycles.
-
 """
 
 import sys
@@ -57,6 +54,7 @@ def create_document(doc_id: str, path: Path) -> Document:
         doc.add_property('mime', f'video/{path.suffix[1:]}')
     elif 'text' in path.parts:
         doc.at_type = DocumentTypes.TextDocument
+        doc.add_property('mime', f'text/plain')
     else:
         print('Warning: could not determine @type')
     doc.add_property('location', str(path))
