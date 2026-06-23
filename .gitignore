@@ -9,12 +9,14 @@ examples/*
 out*
 log*
 tmp*
+shacks
 *.mmif
 .python-version
 backup.sh
 find.sh
 uv.lock
-assets.txt
+assets*.txt
+list-aapb-*.txt
 
 ### Linux ###
 *~
@@ -143,6 +145,7 @@ web_modules/
 .env
 .env.development*
 .env.test*
+.env.local
 .env
 venv*
 

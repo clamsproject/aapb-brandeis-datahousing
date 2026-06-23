@@ -9,7 +9,7 @@ from mmif import Mmif
 from mmif.utils.workflow_helper import generate_workflow_identifier
 
 from api import STORAGE_DIR
-from api.errors import StorageServerError, UploadWarning
+from api.errors import StorageServerError, UploadWarning, EmptyMmifWarning
 
 
 def upload_mmif(body: str, root: str = STORAGE_DIR, overwrite: str = True) -> Path:
@@ -28,6 +28,9 @@ def upload_mmif(body: str, root: str = STORAGE_DIR, overwrite: str = True) -> Pa
     # to the appropriate directories. The syntax of the path is
     # /local_storage_dir/app1name/app1version/app1paramhash/app2name/...
     wfid, param_dicts = generate_workflow_identifier(mmif, return_param_dicts=True)
+    if wfid == '':
+        # this happens when there are no views, just ignore these
+        raise EmptyMmifWarning()
     write_parameters(cur_root, wfid, param_dicts)
 
     # Note that the absolute path is not necessarily absolute because cur_root

@@ -10,38 +10,39 @@ import api
 from api.cli import ClamShack, timestamp
 from api.model.storage import upload_mmif
 from api.run import ClamsApp
-from api.errors import UploadWarning
+from api.errors import StorageWarning
 
 
 def main(args):
 
     jobs_file = Path(args.location) / 'jobs' / args.name
 
-    ## Get a ClamShack and set the app and the batch
+    ## Get a ClamShack and set up the app and the batch
     shack = ClamShack(args.location, None)
-    shack.app = (args.app_name, args.app_url)
     shack.batch = args.batch
-    shack.app2 = ClamsApp(args.app_name, args.app_url)
+    shack.app = ClamsApp(args.app_name, args.app_url)
 
-    ## Get the input to run on, for now only deals with the default batch, also
-    ## need to deal with non-source input.
+    ## Get the input to run on, either the sources or the result of previous
+    ## processing, for now only deals with the default batch
     if args.path == '.':
         in_files = shack.sources
     else:
         p = shack.mmif_dir / shack.cwd() / args.path
-        in_files = [f for f in p.iterdir()]
+        in_files = [f for f in p.iterdir() if f.is_file() and f.suffix == '.mmif']
 
-    ## Run all sources through the app, for now just running the local mocked apps
+    ## Run all input through the app
     for source in in_files:
         t0 = time.time()
         try:
             mmif_in = Mmif(source.read_text())
-            mmif_out = shack.app2.run(mmif_in, args.params)
+            mmif_out = shack.app.run(mmif_in, args.params)
             serialized_mmif = mmif_out.serialize(pretty=True)
+            with open(source.name, 'w') as fh:
+                fh.write(serialized_mmif)
             path = upload_mmif(serialized_mmif, root=shack.mmif_dir)
             message = 'SUCCES'
-        except UploadWarning as e:
-            message = f'ERROR: {e}'
+        except StorageWarning as e:
+            message = f'{e}'
         except Exception as e:
             message = f'ERROR: {e}'
             raise e

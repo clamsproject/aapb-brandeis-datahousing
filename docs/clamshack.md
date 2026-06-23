@@ -1,13 +1,13 @@
 # ClamShack notes
 
-Some notes on he ClamShack tool, parts of it meant to slowly morph into a manual.
+Some notes on the ClamShack tool, parts of it meant to slowly morph into a manual.
 
 
 ## Introduction
 
 Assumptions:
 
-- Relatively small Shack sizes, no more than several hundred or a thousand assets.
+- Relatively small Shack sizes, no more than a thousand assets.
 - There is some way to get the type (video, text etcetera) from the assets path.
 - MMIF files always end with `.mmif`.
 - All asset and MMIF file management happens through the Shack.
@@ -187,10 +187,129 @@ Select the input by navigating through the MMIF storage, which is kept in the `m
 
 ### Step 5: Run the job
 
-Create a unique name for the job and then start the job, which will run in the background as a separate process. This will probably only work on Linux-like systems. For this, use the `run` command, which will use the selected app and the selected path. Control will immediately come back to the ClamShell, you can see status of all jobs with `jobs`.
+Create a unique name for the job and then start the job, which will run in the background as a separate process. This will probably only work on Linux-like systems. For this, use the `run` command, which will use the selected app and the selected path. Control will immediately come back to the ClamShell, you can see the status of all jobs with `jobs`.
 
 
 ## Various developer notes
+
+Many of these notes are relevant to Brandeis developers only.
+
+
+### ClamShell on Aristotle
+
+To properly test this you need a machine with a recent GPU that is big enough. It is possible to run small GPU jobs on child.cs-i.brandeis.edu but the GPU is old and not supported by Torch anymore and there are only a few configurations of CUDA and Torch that work, and it becomes especially hairy with containers. The best option is aristotle.cs-i.brandeis.edu, which is newer and more powerful so running containers there should be no problem.
+
+On aristotle there is a script `/usr/local/bin/clamspod` which takes an image and a port number and then starts a Podman container that has a whole bunch of settings and mounts that make the container run for any CLAMS App. For example
+
+```bash
+clamspod ghcr.io/clamsproject/app-swt-detection:v8.6 5050
+```
+
+Typically you need to get a fairly high port number, using 5001 is likely to fail.
+
+With the above the scipt will try to grab and use all GPU cores, but since these apps can only use one core it makes sense to grab a core that is not being used. Use `nvidia-smi` or `nvitop` to check what GPU cores are available, and then amend the command a bit:
+
+```bash
+CUDA_VISIBLE_DEVICES=1 clamspod ghcr.io/clamsproject/app-swt-detection:v8.6 5050
+```
+
+You may want to add another mount for local data and detach the container. Local data means local to aristotle which has a different file system than the OSX system used in the examples above. So let's assume that instead of `/Users/Shared/aapb/assets-small/` we have the assets stored in `/home/marc/data/aapb/assets-small`.
+
+Now you can use (here we also added a name for the container):
+
+```bash
+clamspod ghcr.io/clamsproject/app-swt-detection:v8.6 5050 --name swt-8.6 -d -v /marc/home/data/aapb/assets-small:/data
+```
+
+With the above the actual run command that runs is
+
+```bash
+podman run \
+	--pids-limit 16384 \
+	--device nvidia.com/gpu=all \
+	--security-opt=label=disable \
+	-e TRITON_LIBCUDA_PATH=/lib64/libcuda.so.1 \
+	-e BAAPB_RESOLVER_ADDRESS=eldrad.cs-i.brandeis.edu:23456 \
+	-v /home/marc:/home/marc \
+	-v /mnt/llc/llc_data:/mnt/llc/llc_data \
+	-v /localcache/shared/torch_home:/cache/torch \
+	-v /localcache/shared/whisper:/cache/whisper \
+	-v /localcache/shared/hf_cache/hub:/cache/huggingface/hub \
+	--rm \
+	-p 20001:5000 \
+	-d \
+	-v /home/marc/data:/data \
+	ghcr.io/clamsproject/app-swt-detection:v8.6 /bin/bash \
+	-c 'pip3 install mmif-docloc-baapb && python3 /app/app.py'
+```
+
+When this is started and you run `nvidia-smi` again you will not notice that an extra GPU is used, this is because the model will not be loaded (and the GPU grabbed) until you first process something.
+
+Formatted listing of running containers:
+
+```bash
+podman ps --format 'table {{.ID}} {{.Image}} {{.Names}} {{.Ports}}'
+```
+
+To check the container and its mounts use
+
+```bash
+podman exec -it <container_name>
+```
+
+
+### Debugging the Shack on Aristotle
+
+Let's first get some real data on there to run by copying the local mini-archive from OSX to aristotle:
+
+```bash
+scp /Users/Shared/archive.tar.gz aristotle:/home/marc/data/aapb
+```
+
+After it is unpacked we can mount `/home/marc/data/aapb/archive`.
+
+```bash
+clamspod ghcr.io/clamsproject/app-swt-detection:v8.6 5050 --name swt -d -v /home/marc/data/aapb/archive:/data
+```
+
+Let's pull SWT, the captioner and spaCy, and then start the containers:
+
+```bash
+podman pull ghcr.io/clamsproject/app-swt-detection:v8.6
+podman pull ghcr.io/clamsproject/app-smolvlm2-captioner:v1.0
+podman pull  ghcr.io/clamsproject/app-spacy-wrapper:v2.2
+clamspod ghcr.io/clamsproject/app-swt-detection:v8.6 5050 --name swt -d -v /home/marc/data/aapb/sample:/data
+clamspod ghcr.io/clamsproject/app-smolvlm2-captioner:v1.0 5051 --name captioner -d -v /home/marc/data/aapb/sample:/data
+clamspod ghcr.io/clamsproject/app-spacy-wrapper:v2.2 5052 --name spacy -d -v /home/marc/data/aapb/sample:/data
+```
+
+And let's create a new assets file tailored to the few text and video in there:
+
+```
+/home/marc/data/aapb/archive
+video/cpb-aacip-507-z31ng4hp5t.part.mp4
+text/cpb-aacip-507-z31ng4hp5t.part.mp4
+```
+
+Using the container in isolation:
+
+```bash
+curl -X POST -d@test/sources/cpb-aacip-507-z31ng4hp5t.part.mmif 127.0.0.1:5050 > out.json
+```
+
+And now create a Shack:
+
+```
+uv run python -m api.cli --shack test --assets assets2.txt
+```
+
+This does create an appropriate shack with 1 source and 2 assets.
+
+```
+clamshack> register http://127.0.0.1:5050
+clamshack> register http://127.0.0.1:5051
+clamshack> register http://127.0.0.1:5052
+```
 
 
 ### Search
@@ -199,21 +318,8 @@ Distinguish between several kinds of search.
 
 - Asset search on GUIDs. This is already implemented.
 - MMIF file search on GUIDs, apps and workflow properties. The first could be folded into the asset search. On apps and/or workflow properties we should search every part of the workflow, for example, a spaCy result is still a spaCy result if it is in the last step of a workflow.
+- Searchig the contents of the parameter files.
 - A mix of search inputs, for example GUIDs and apps.
-
-
-### Batches
-
-There is a default batch which just uses all assets or MMIF sources. Add batches by selecting elements or by reading a list of identifiers or by getting it from the website at:
-
-- [https://github.com/clamsproject/aapb-annotations/tree/main/batches](https://github.com/clamsproject/aapb-annotations/tree/main/batches)
-
-Todo:
-
-- Add other batches beyond the one default batch
-- Should be able to create them (manually, from list, from aapb-annotation url).
-- Should be used in `run_batch.py`.
-- Maybe the default batch does not need to be in the batches dictionary.
 
 
 ### Jobs
@@ -223,7 +329,6 @@ One thing that happens when you run a job is that the api storage code will not 
 Todo:
 
 - Jobs overide prior results, perhaps add a flag as with the storage upload to allow/disallow overwrite.
-- Would like to sort them on start time
 - They are less fragile than they used to be, but should still consider using a Job class that reads the job file and perhaps some changes to the format and content of the job file: (1) separate lines to represent things like batch info, app name, parameters etcetera, (2) add a count of files to be processed (allows later inspection of the file to print a percentage done number). 
 - Make sure that files like '.DS_store' and others that are not jobs will be skipped, should be done in ClamShack
 

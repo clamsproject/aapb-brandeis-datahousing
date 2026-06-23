@@ -17,7 +17,11 @@ from rich.syntax import Syntax
 import api.run
 
 from api.cli_utils import Job, console, messages, COMMANDS, timestamp
-from api.cli_utils import info, warning, error, dribble, bold
+from api.cli_utils import info, warning, error, dribble, get_tree
+
+
+from mmif.utils.cli import describe
+from mmif.utils.workflow_helper import describe_single_mmif, generate_param_hash
 
 
 shack = None
@@ -44,7 +48,6 @@ class ClamShack:
         self.sources_dir = self.location / 'sources'
         self.jobs_dir = self.location / 'jobs'
         self._apps = api.run.APPS
-        
         if assets is not None:
             if self.location.exists():
                 exit(f'Cannot create a ClamShack because "{self.location}" already exists')
@@ -53,10 +56,8 @@ class ClamShack:
         else:
             if not self.is_clams_directory():
                 exit(f'Cannot open "{self.location}" since it is not a ClamShack directory')
-
         self._assets = Assets(self)
         self.mmif_index = MmifIndex(self)
-
         self._path = Path('.')  # the current working path inside the mmif directory
         self.batch = 'default'
         # Dictionary of batches. The value is a list of identifiers or None, in
@@ -65,7 +66,6 @@ class ClamShack:
         self._jobs = [p for p in self.jobs_dir.iterdir()]
         self.app = None      # selected app for a batch job
         self.params = {}     # run-time parameters
-
 
     def create_directory_structure(self):
         """Create the directory scaffolding, assumes the Shack direcotry does not
@@ -110,7 +110,11 @@ class ClamShack:
     def jobs(self):
         """Recreate jobs from the list of paths each time you access this propery,
         this makes sure updates from long running jobs are included."""
-        return [Job(path) for path in self._jobs]
+        jobs = {}
+        for path in self._jobs:
+            job = Job(path)
+            jobs[job.name] = job
+        return jobs
 
     def __str__(self):
         return f'<ClamShack "{self.location}" assets={len(self.assets)}>'
@@ -155,12 +159,16 @@ class ClamShack:
             directory = fh.readline().strip()
             for line in fh:
                 path = line.strip()
+                if not path:
+                    continue  ## skipping empty lines
                 full_path = Path(directory) / path
                 container_path = Path('/data') / path
                 if full_path.is_file():
                     #self._assets.add(full_path)
                     self.add_mmif_source(container_path)
                     added.append(container_path)
+                else:
+                    print(f'WARNING: not a file {str(full_path)}')
 
     def add_mmif_source(self, container_path: Path):
         source_path = self.sources_dir / f'{container_path.stem}.mmif'
@@ -197,7 +205,10 @@ class ClamShack:
     def cd(self, path: str):
         """Change the current MMIF path. Assumes that the input was vetted by
         the Shell."""
-        if path == '..':
+        if path == '~':
+            self._path = Path('.')
+        elif path == '..':
+            # TODO: also allow for ../.. and then do the right thing
             self._path = self._path.parent
         else:
             self._path = self._path / path
@@ -219,16 +230,17 @@ class ClamShack:
             ('assets', assets_count),
             ('sources', len(self.sources)),
             ('jobs', len(self._jobs)),
-            ('batch', self.batch),
-            ('path', self._path),
+            ('path', str(self._path)),
             ('clams_app', app),
             ('parameters', self.params)]
 
     def show_settings(self):
-        app = None if self.app is None else self.app.name
-        assets_count = 0 if self.assets is None else len(self.assets)
+        table = Table(show_header=False)
         for name, value in self.get_settings():
-            console.print(f' {name:10}  =  {value}')
+            #console.print(f' {name:10}  =  {value}')
+            table.add_row(name, str(value))
+        console.print(Panel("Shack settings and information"))
+        console.print(table)
 
 
 def print_command(cmd: str):
@@ -236,6 +248,7 @@ def print_command(cmd: str):
 
 
 def print_help(command: str, description: str):
+    # TODO: update this to use textwrap 
     sep = '  ' if len(command) < 20 else '\n    '
     text = Text.assemble((command, "bold dark_blue"), sep, description)
     console.print('\n', text, '\n')
@@ -295,16 +308,16 @@ class Shell(Cmd):
     """The main shell for the ClamShack."""
 
     intro = (
-        '\nThis is the CLAM Shack. Type "commands" for a list of commands.\n')
-    prompt = bold('ClamShell> ')
+        '\nThis is the CLAM Shack. Type "?" for a list of commands.\n')
+    prompt = 'ClamShell> '
 
-    # Hidden commands are not advertized to the user when they type 'help',
+    # Hidden commands are not advertized to the user when they type 'help'
     # and there is no help available for them.
-    hidden_commands = {'t', 'x', 'tswt', 'tspacy', 'pspacy', 'nl', 'new'}
+    hidden_commands = {'t', 'x', 'y', 'z', 'tswt', 'tspacy', 'pspacy', 'nl', 'new'}
 
     @classmethod
     def set_prompt(cls, shackname: str):
-        cls.prompt = bold(f'ClamShell {shackname}> ')
+        cls.prompt = f'ClamShell {shackname}> '
 
     def __init__(self, clamshack: ClamShack | None):
         super().__init__()
@@ -385,17 +398,24 @@ class Shell(Cmd):
         api.run.register_app(arg)
 
     def do_jobs(self, arg):
-        console.print(Panel('List of jobs associated with this Shack'))
-        table = Table('started', 'name', 'app', 'batch', 'guids', 'time', box=box.ROUNDED)
-        for job in sorted(shack.jobs, key=lambda x: x.started, reverse=False):
-            started = job.started.isoformat()
-            finished = '' 
-            if job.finished is None:
-                delta = 'in-progress'
-            else:
-                delta = str(int((job.finished - job.started).total_seconds())) + ' seconds'
-            table.add_row(started, job.name, job.app, job.batch, str(len(job.guids)), delta)
-        console.print(table)
+        if arg:
+            try:
+                job = shack.jobs[arg]
+                console.print(Panel(job.name))
+                console.print(job.info())
+                console.print(job.info_guids())
+            except KeyError:
+                warning('No such job.')
+                return
+        else:
+            console.print(Panel(
+                'Jobs associated with this Shack'
+                ' (listed in order of when they were started)'))
+            table = Table('name', 'app', 'guids', 'time', box=box.ROUNDED)
+            for job in sorted(shack.jobs.values(), key=lambda x: x.started, reverse=False):
+                elapsed = job.time_elapsed()
+                table.add_row(job.name, job.app, str(len(job.guids)), elapsed)
+            console.print(table)
 
     def do_params(self, arg):
         args = arg.split()
@@ -409,6 +429,9 @@ class Shell(Cmd):
     def do_run(self, arg):
         if not arg:
             warning('You must provide a name for the job.')
+            return
+        if shack.app is None:
+            warning('You must select a CLAMS app.')
             return
         job_file = shack.jobs_dir / arg
         if job_file.is_file():
@@ -445,15 +468,51 @@ class Shell(Cmd):
         print()
 
     def do_cd(self, arg):
+        # first translate an index from the dir command into a sub directory
         subdirs = { n: str(p) for n, p in enumerate(shack.subdirs()) }
         if arg.isnumeric() and int(arg) in subdirs:
             arg = subdirs[int(arg)]
+        # get the new path
         p = Path(shack.mmif_dir / shack.cwd() / arg)
-        if p.exists():
+        # now check for existence or whether we are going back home
+        if p.exists() or arg == '~':
             shack.cd(arg)
             console.print(f'New path: {shack.cwd()}')
         else:
             print('No such directory')
+
+    def do_home(self, arg):
+        self.do_cd('~')
+
+    def do_up(self, arg):
+        self.do_cd('..')
+
+    def do_tree(self, arg):
+        args = arg.split()
+        full = True if '-f' in args else False
+        parameters = True if '-p' in args else False
+        t = get_tree(shack.mmif_dir / shack._path, full=full)
+        console.print(Panel('MMIF File tree'))
+        self.do_nl('')
+        console.print(t)
+        if parameters:
+            self.cmdqueue.append('properties')
+
+    def do_properties(self, arg):
+        # TODO: make this more general
+        if len(shack._path.parts) in (3, 6, 9, 12, 15, 18, 21):
+            props_path = shack._path.parent / (shack._path.name + '.json')
+            full_props_path = shack.mmif_dir / props_path
+            console.print(Panel(str(props_path)))
+            console.print(full_props_path.read_text())
+
+    def do_describe(self, arg):
+        full_path = shack.mmif_dir / shack._path
+        for n, f in enumerate(shack.files()):
+            if n == int(arg):
+                console.print(Panel(f'describe {str(f)}'))
+                desc = describe_single_mmif(full_path / f)
+                console.print(desc)
 
     def do_help(self, arg):
         if not arg:
@@ -503,15 +562,25 @@ class Shell(Cmd):
         self.cmdqueue.append('p spacy/v3/d41d8cd98f00b204e9800998ecf8427e.json') 
 
     def do_t(self, arg):
-        self.cmdqueue.append('search guid p38')
+        self.cmdqueue.append('search guid 512')
         self.cmdqueue.append('search app spacy')
-        
+        #self.cmdqueue.append('jobs')
+        self.cmdqueue.append('tree')
+
     def do_x(self, arg):
         self.cmdqueue.append('register http://127.0.0.1:5001')
         self.cmdqueue.append('apps 0')
         self.cmdqueue.append('params pretty True')
         self.cmdqueue.append('s')
        
+    def do_y(self, arg):
+        self.cmdqueue.append('cd 0')
+        self.cmdqueue.append('cd 0')
+        self.cmdqueue.append('cd 0')
+        self.cmdqueue.append('tree')
+        self.cmdqueue.append('properties')
+        self.cmdqueue.append('describe 0')
+
     def do_nl(self, arg):
         print()
 

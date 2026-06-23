@@ -48,13 +48,17 @@ def create_document(doc_id: str, path: Path) -> Document:
     # TODO: this should be generalized and deal with all mime types
     doc = Document()
     doc.id = doc_id
-    # TODO: should not just rely on the path
+    # TODO: should not just rely on the path and the MIME type needs to take
+    # the extension into account
     if 'video' in path.parts:
         doc.at_type = DocumentTypes.VideoDocument
         doc.add_property('mime', f'video/{path.suffix[1:]}')
     elif 'text' in path.parts:
         doc.at_type = DocumentTypes.TextDocument
         doc.add_property('mime', f'text/plain')
+    elif 'audio' in path.parts:
+        doc.at_type = DocumentTypes.TextDocument
+        doc.add_property('mime', f'audio/wav')
     else:
         print('Warning: could not determine @type')
     doc.add_property('location', str(path))
