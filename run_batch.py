@@ -37,8 +37,8 @@ def main(args):
             mmif_in = Mmif(source.read_text())
             mmif_out = shack.app.run(mmif_in, args.params)
             serialized_mmif = mmif_out.serialize(pretty=True)
-            with open(source.name, 'w') as fh:
-                fh.write(serialized_mmif)
+            #with open(source.name, 'w') as fh:
+            #    fh.write(serialized_mmif)
             path = upload_mmif(serialized_mmif, root=shack.mmif_dir)
             message = 'SUCCES'
         except StorageWarning as e:
