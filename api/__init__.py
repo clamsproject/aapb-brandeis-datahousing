@@ -25,7 +25,7 @@ def create_app(build_db=BUILD_DB, developer_mode=DEVELOPER_MODE):
 
     @app.cli.command("create-db")
     def create_db():
-        """Create the assets database and polulate it."""
+        """Create the assets database and populate it."""
         initialize_database(populate=True)
         print('Assets database created and populated')
 

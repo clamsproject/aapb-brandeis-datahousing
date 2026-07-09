@@ -33,6 +33,10 @@ def getsize(obj):
     return size
 
 
+def load_json(fname: str) -> dict:
+    return json.loads(Path(fname).read_text())    
+
+
 def path_from_workflow_specs(workflow_spec: dict):
     """
     Helper method to read in a json object containing the names of the app in a 

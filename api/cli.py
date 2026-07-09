@@ -1,6 +1,7 @@
 import sys
 import time
 import datetime
+import textwrap
 from cmd import Cmd
 from pathlib import Path
 import argparse
@@ -14,14 +15,15 @@ from rich.text import Text
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
-import api.run
-
-from api.cli_utils import Job, console, messages, COMMANDS, timestamp
-from api.cli_utils import info, warning, error, dribble, get_tree
-
-
 from mmif.utils.cli import describe
 from mmif.utils.workflow_helper import describe_single_mmif, generate_param_hash
+
+import api.run
+
+from api.utils import load_json
+from api.cli_utils import Job, console, messages, COMMANDS, timestamp
+from api.cli_utils import info, warning, error, dribble, get_tree
+from api.cli_utils import path_as_triples, path_as_string
 
 
 shack = None
@@ -33,10 +35,11 @@ class ClamShack:
 
     """
     Instances of this class keep track of all information like location, current
-    batch, current path in the shack and others. It is also the entry point to
-    all batch processing.
+    path in the shack and others. They are also the entry point for any changes
+    made to the shack, like registering CLAMS apps and running jobs.
 
     TODO: this maybe should be defined somewhere in the api.model package.
+    TODO: a shack should not print to the console, leave that to the shell
     """
 
     def __init__(self, directory: str, assets: str | None):
@@ -44,7 +47,6 @@ class ClamShack:
         self.assets_file = self.location / 'assets' / 'list.txt'
         self.assets_dir = self.location / 'assets'
         self.mmif_dir = self.location / 'mmif'
-        self.batches_dir = self.location / 'batches'
         self.sources_dir = self.location / 'sources'
         self.jobs_dir = self.location / 'jobs'
         self._apps = api.run.APPS
@@ -59,11 +61,7 @@ class ClamShack:
         self._assets = Assets(self)
         self.mmif_index = MmifIndex(self)
         self._path = Path('.')  # the current working path inside the mmif directory
-        self.batch = 'default'
-        # Dictionary of batches. The value is a list of identifiers or None, in
-        # which case all assets are used.
-        self.batches = {'default': None}
-        self._jobs = [p for p in self.jobs_dir.iterdir()]
+        self._jobs = [p for p in self.jobs_dir.iterdir() if p.suffix == '.txt']
         self.app = None      # selected app for a batch job
         self.params = {}     # run-time parameters
 
@@ -87,6 +85,10 @@ class ClamShack:
         return True
 
     @property
+    def name(self):
+        return self.location.name
+
+    @property
     def assets(self) -> list[Path]:
         return list(sorted(self._assets.files))
 
@@ -108,7 +110,7 @@ class ClamShack:
 
     @property
     def jobs(self):
-        """Recreate jobs from the list of paths each time you access this propery,
+        """Recreate jobs from the list of paths each time you access this property,
         this makes sure updates from long running jobs are included."""
         jobs = {}
         for path in self._jobs:
@@ -119,27 +121,21 @@ class ClamShack:
     def __str__(self):
         return f'<ClamShack "{self.location}" assets={len(self.assets)}>'
 
-    def search(self, guid: str = '', app: str = '') -> list:
+    def job_file(self, job_name: str):
+        return self.jobs_dir / f'{job_name}.txt'
+
+    def search(self, term: str, assets=False, mmif=False, app=False) -> list | dict:
         """Search assets and MMIF files given a partial guid or a partial app name."""
-        if guid:
-            result = [a for a in self.assets if guid in str(a.name)]
-            for mf in self.mmif_index.data:
-                if guid in mf:
-                    result.extend(self.mmif_index.data[mf])
-            return result
+        # TODO: decide on return values
+        #    - assets: list of assets and sources used in them
+        #    - mmif: dictionary of sources and the directories they occur in
+        #    - app: list of directories
+        if assets:
+            return self.mmif_index.search_assets(term)
+        elif mmif:
+            return self.mmif_index.search_mmif(term)
         elif app:
-            # TODO: this is very ugly and broken, at least properly parse the path to
-            # avoid matching on any part of the path. We could improve MmifIndex and 
-            # create an index on CLAMS apps. This would improve performance but that is
-            # a secondary motivation because performance is fine on a small Shack.
-            paths = set()
-            for guid in self.mmif_index.data:
-                for path in self.mmif_index.data[guid]:
-                    for part in path.parts:
-                        if app in part:
-                            paths.add(path.parent)
-                            break
-            return list(sorted(paths))
+            return self.mmif_index.search_app(term)
         else:
             return []
 
@@ -202,6 +198,16 @@ class ClamShack:
         files = [Path(f.name) for f in files]
         return list(sorted(files))
 
+    def parameter_file(self) -> Path | None:
+        """Return the parameter file that goes with the current directory,
+        of None if there is no such file."""
+        #if len(self._path.parts) in (3, 6, 9, 12, 15, 18, 21):
+        path_lenght = len(self._path.parts)
+        if path_lenght > 0 and path_lenght % 3 ==0:
+            return self.mmif_dir / self._path.parent / (self._path.name + '.json')
+        else:
+            return None
+
     def cd(self, path: str):
         """Change the current MMIF path. Assumes that the input was vetted by
         the Shell."""
@@ -213,12 +219,23 @@ class ClamShack:
         else:
             self._path = self._path / path
 
+    def register(self, url: str):
+        api.run.register_app(url)
+
+    def select_app(self, selection: str) -> bool:
+        """Select an application if it is amongst the registered apps,
+        return True or False depending on whether selection succeeded."""
+        if selection in shack.apps:
+            shack.app = api.run.ClamsApp(selection, shack.apps[selection])
+            return True
+        return False
+
     def run_job(self, name: str):
-        with open(self.jobs_dir / name, 'w') as fh:
+        with open(self.job_file(name), 'w') as fh:
             fh.write(f'STARTED\t{timestamp()}\n')
         job_file = self.jobs_dir / name
         process_id = api.run.run_job(
-            name, self.location, self.cwd(), self.batch, self.app, self.params)
+            name, self.location, self.cwd(), self.app, self.params)
         self._jobs.append(Path(self.jobs_dir / name))
         return process_id
 
@@ -248,11 +265,12 @@ def print_command(cmd: str):
 
 
 def print_help(command: str, description: str):
-    # TODO: update this to use textwrap 
-    sep = '  ' if len(command) < 20 else '\n    '
-    text = Text.assemble((command, "bold dark_blue"), sep, description)
-    console.print('\n', text, '\n')
-
+    lines = textwrap.wrap(
+        description, width=80, initial_indent='     ', subsequent_indent='     ')
+    text = Text.assemble('\n ', (command, "bold dark_blue"))
+    console.print(text)
+    for l in lines:
+        console.print(l)
 
 
 class Assets:
@@ -287,50 +305,83 @@ class Assets:
 
 class MmifIndex:
 
-    """Index of MMIF files in the Shack. For now it is not much of an index but
-    in the data instance variable there is a dictionary that maps GUIDs to lists
-    of MMIF file locations."""
+    """Index of MMIF files in the Shack to support searching the MMIF storage. For
+    now it is not much of an index but at least there is a dictionary of filenames
+    mapped to path and a set of all directories with MMIF files.
+
+    data: dict  -  { filename -> list of paths }
+    dirs: set   -  directories inside of the mmif storage
+
+    """
+
+    # TODO: the index is not updated after new files were added
 
     def __init__(self, shack: ClamShack):
-        # TODO: this is done for the search but is never updated after a new job
-        # finished running, need to rethink this.
+        self.sources = shack.sources
         self.data = defaultdict(list)
+        self.dirs = set()
+        prefix = shack.mmif_dir.parts
         for f in shack.mmif_dir.rglob('*'):
+            f_rel = Path(*f.parts[len(prefix):])
+            self.dirs.add(f_rel.parent)
             if f.is_file() and f.suffix == '.mmif':
-                self.data[f.stem].append(f)
+                self.data[f.stem].append(f_rel)
 
     def __str__(self):
-        return f'<MiffIndex with {len(self.data)} GUIDs>'
+        return f'<MiffIndex with {len(self.data)} MMIF files in {len(self.dirs)} directories>'
+
+    def search_assets(self, term: str) -> list:
+        return [a for a in self.sources if term in str(a.name)]
+
+    def search_mmif(self, term: str) -> dict:
+        results = {}
+        for name in self.data.keys():
+            if term in name:
+                results[name] = self.data[name]
+        return results
+
+    def search_app(self, term: str) -> list:
+        results = []
+        dirs = [d for d in self.dirs if len(d.parts) % 3 == 0]
+        for directory in dirs:
+            triples = path_as_triples(directory)
+            if triples and term in triples[-1][0]:
+                results.append(directory)
+        return results
 
 
 class Shell(Cmd):
 
-    """The main shell for the ClamShack."""
+    """Shell for command-line access to the ClamShack."""
 
     intro = (
         '\nThis is the CLAM Shack. Type "?" for a list of commands.\n')
     prompt = 'ClamShell> '
+    _history = []
 
     # Hidden commands are not advertized to the user when they type 'help'
-    # and there is no help available for them.
-    hidden_commands = {'t', 'x', 'y', 'z', 'tswt', 'tspacy', 'pspacy', 'nl', 'new'}
+    hidden_commands = {'t', 'x', 'y', 'z', 'nl', 'new', 'echo'}
 
     @classmethod
-    def set_prompt(cls, shackname: str):
-        cls.prompt = f'ClamShell {shackname}> '
+    def set_prompt(cls, shack: ClamShack):
+        cls.prompt = f'ClamShell {shack.name}> '
 
     def __init__(self, clamshack: ClamShack | None):
         super().__init__()
         if clamshack:
             global shack
             shack = clamshack
-            self.set_prompt(shack.location.name)
+            self.set_prompt(shack)
+
+    @property
+    def history(self):
+        return self.__class__._history
 
     def default(self, line):
-        """This will apply if no command was recognized."""
+        """This applies if no command was recognized."""
         if line.strip() == 'c':
             pass
-        elif line == "q" or line == "EOF":
+        elif line in ("q", "EOF"):
             self.do_quit(line)
             return True
         elif line == 's':
@@ -340,11 +391,24 @@ class Shell(Cmd):
                 console.print(eval(line))
             except Exception as e:
                 console.print(e)
+        elif line.startswith('p '):
+            # This is not advertized but it is here to sneak in the 
+            # possibility to evaluate Python expressions.
+            command = ' '.join(line.split()[1:])
+            if command:
+                try:
+                    console.print(eval(command))
+                except Exception as e:
+                    console.print(e)
         else:
             warning(f'Unknown command: {line.strip().split()[0]}')
 
     def postcmd(self, stop, line):
+        """Print an empty line after a command is executed and put the command
+        on the history list."""
         print()
+        if not line.split()[0] in self.__class__.hidden_commands:
+            self.history.append(line)
         return stop
 
     ## Core actions
@@ -356,29 +420,45 @@ class Shell(Cmd):
 
     def do_show(self, arg):
         """Show current settings"""
-        if shack is None:
-            warning('Cannot show state since no ClamShack is loaded')
+        shack.show_settings()
+
+    def do_history(self, arg):
+        if arg == 'save':
+            with open('history.txt', 'w') as fh:
+                for line in self.history:
+                    fh.write(f'{line}\n')
+            console.print('History was saved to "history.txt"')
         else:
-            shack.show_settings()
+            console.print(self.history)
 
     def do_search(self, arg):
         if not arg:
             warning('No search parameters given')
             return
         search_type, *args = arg.split()
-        if search_type == 'guid':
-            assets = shack.search(guid=args[0])
+        if search_type == 'assets':
+            results = shack.search(term=args[0], assets=True)
+            console.print(Panel(f'Assets matching "{args[0]}"'))
+            for r in results:
+                print(f' {r.name}')
+        elif search_type == 'mmif':
+            results = shack.search(term=args[0], mmif=True)
+            console.print(Panel(f'MMIF files matching "{args[0]}"'
+                                 ' and the directories where they occur'))
+            for name in results:
+                print(' ' + name)
+                for p in results[name]:
+                    print('    ', path_as_string(p.parent))
         elif search_type == 'app':
-            assets = shack.search(app=args[0])
+            results = shack.search(term=args[0], app=True)
+            console.print(Panel(f'Directories created by app matching "{args[0]}"'))
+            for p in results:
+                print(f' {path_as_string(p)}')
         else:
-            warning(f'Cannot search for "{arg}", use "guid" or "app"')
+            warning(f'Cannot search for "{arg}", use "assets", "mmif" or "app"')
             return
-        console.print([str(a) for a in assets])
 
     def do_apps(self, arg):
-        if shack is None:
-            warning("Cannot print or select apps when no Shack is loaded.")
-            return
         app_dict = dict(enumerate(shack.app_names))
         if not arg:
             console.print(Panel('Registered CLAMS Apps'))
@@ -388,14 +468,14 @@ class Shell(Cmd):
             selection = arg
             if selection.isnumeric():
                 selection = app_dict.get(int(selection))
-            if selection in shack.apps:
-                shack.app = api.run.ClamsApp(selection, shack.apps[selection])
+            succeeded = shack.select_app(selection)
+            if succeeded:
                 dribble(f'Selected {selection}')
             else:
                 warning(f'Selection does not exist')
 
     def do_register(self, arg):
-        api.run.register_app(arg)
+        shack.register(arg)
 
     def do_jobs(self, arg):
         if arg:
@@ -421,6 +501,12 @@ class Shell(Cmd):
         args = arg.split()
         if len(args) == 1 and args[0] == 'reset':
             shack.params = {}
+        elif len(args) == 1:
+            try:
+                params = load_json(args[0])
+                shack.params = params
+            except Exception:
+                print(f'There is no file "{args[0]}"')
         elif len(args) == 2:
             param, value = args
             shack.add_parameter(param, value)
@@ -442,30 +528,42 @@ class Shell(Cmd):
             if not files:
                 print('Nothing to do, there are no MMIF files in the current path')
                 return
-        console.print(Panel('Starting job'))
+        process_id = shack.run_job(arg)
+        console.print(Panel('Started job'))
         dribble(f'  name   = {arg}')
         dribble(f'  path   = {shack.cwd()}')
-        dribble(f'  batch  = {shack.batch}')
         dribble(f'  app    = {shack.app}')
         dribble(f'  params = {shack.params}')
-        process_id = shack.run_job(arg)
         dribble(f'  pid    = {process_id}')
 
+    def do_script(self, arg):
+        """Loads a file of commands and then run them. The file of commands has to
+        be in the same format as the file that is created by the "history save"
+        command."""
+        # TODO: check the script file so that it only has one run command
+        if arg:
+            script_path = Path(arg)
+            if script_path.is_file():
+                commands = []
+                for line in script_path.read_text().split('\n'):
+                    if line.strip():
+                        commands.append(line.strip())
+                for c in commands:
+                    self.cmdqueue.append(f'echo {c}')
+                    self.cmdqueue.append(c)
+
     def do_pwd(self, arg):
-        console.print(shack.cwd())
-        print()
+        print(shack.cwd())
 
     def do_dir(self, arg):
         console.print(Panel(f'Sub directories at "{shack.cwd()}"'))
         for n, d in enumerate(shack.subdirs()):
             console.print(f' {n}: {str(d)}')
-        print()
 
     def do_files(self, arg):
         console.print(Panel(f'MMIF files at "{shack.cwd()}"'))
         for n, f in enumerate(shack.files()):
             console.print(f' {n}: {str(f)}')
-        print()
 
     def do_cd(self, arg):
         # first translate an index from the dir command into a sub directory
@@ -496,23 +594,27 @@ class Shell(Cmd):
         self.do_nl('')
         console.print(t)
         if parameters:
-            self.cmdqueue.append('properties')
-
-    def do_properties(self, arg):
-        # TODO: make this more general
-        if len(shack._path.parts) in (3, 6, 9, 12, 15, 18, 21):
-            props_path = shack._path.parent / (shack._path.name + '.json')
-            full_props_path = shack.mmif_dir / props_path
-            console.print(Panel(str(props_path)))
-            console.print(full_props_path.read_text())
+            parameter_file = shack.parameter_file()
+            if parameter_file is not None:
+                print()
+                console.print(Panel(str(parameter_file)))
+                console.print(parameter_file.read_text())
 
     def do_describe(self, arg):
+        if not arg.isdigit():
+            warning('The argument must be an integer')
+            return
         full_path = shack.mmif_dir / shack._path
         for n, f in enumerate(shack.files()):
             if n == int(arg):
+                if not (full_path / f).suffix == '.mmif':
+                    warning('The file at that index is not a MMIF file')
+                    return
                 console.print(Panel(f'describe {str(f)}'))
                 desc = describe_single_mmif(full_path / f)
                 console.print(desc)
+                return
+        warning('No MMIF file at that index')
 
     def do_help(self, arg):
         if not arg:
@@ -528,61 +630,45 @@ class Shell(Cmd):
         else:
             print(f'No help available for {arg}')
 
+    def do_echo(self, arg):
+        print(f'>>> {arg}')
+
+    def do_nl(self, arg):
+        # Useful when adding mulitple commands to the queue.
+        print()
+
     ## Undocumented actions for debugging and development
 
     def do_new(self, arg):
         """Staging method for new functionality."""
-        t = Table()
-        t.add_column('property')
-        t.add_column('value')
-        t.add_row('location', str(shack.location))
-        t.add_row('assets', str(len(shack.assets)))
-        console.print(t,'<ole>', 23, '\n')
-        guid = 'aapb-cneiustLEBiC'
-        p = shack.sources_dir / f'{guid}.mmif'
-        with open(p) as fh:
-            console.print(str(p), Syntax(p.read_text(), 'json'))
-        print()
-
-    def do_tspacy(self, arg):
-        """Command to run commands that I am testing, for development only."""
-        self.cmdqueue.append('apps select http://apps.clams.ai/spacy/v3')
-        self.cmdqueue.append(f'run {arg}')
-
-    def do_tswt(self, arg):
-        """Command to run commands that I am testing, for development only."""
-        self.cmdqueue.append('apps select http://apps.clams.ai/swt/v7.0')
-        self.cmdqueue.append('params pretty True')
-        self.cmdqueue.append('params sticther True')
-        self.cmdqueue.append(f'run {arg}')
-
-    def do_pspacy(self, arg):
-        self.cmdqueue.append('p spacy/v3')
-        self.cmdqueue.append('p spacy/v3/d41d8cd98f00b204e9800998ecf8427e') 
-        self.cmdqueue.append('p spacy/v3/d41d8cd98f00b204e9800998ecf8427e.json') 
+        pass
 
     def do_t(self, arg):
-        self.cmdqueue.append('search guid 512')
-        self.cmdqueue.append('search app spacy')
-        #self.cmdqueue.append('jobs')
-        self.cmdqueue.append('tree')
+        self.cmdqueue.append('script s.txt')
 
     def do_x(self, arg):
         self.cmdqueue.append('register http://127.0.0.1:5001')
         self.cmdqueue.append('apps 0')
+        self.cmdqueue.append('cd 0')
+        self.cmdqueue.append('cd 0')
+        self.cmdqueue.append('cd 0')
+        self.cmdqueue.append('cd 0')
+        self.cmdqueue.append('cd 0')
+        self.cmdqueue.append('cd 0')
         self.cmdqueue.append('params pretty True')
+        self.cmdqueue.append('params params.json')
+        self.cmdqueue.append('jobs')
         self.cmdqueue.append('s')
-       
-    def do_y(self, arg):
-        self.cmdqueue.append('cd 0')
-        self.cmdqueue.append('cd 0')
-        self.cmdqueue.append('cd 0')
-        self.cmdqueue.append('tree')
-        self.cmdqueue.append('properties')
-        self.cmdqueue.append('describe 0')
 
-    def do_nl(self, arg):
-        print()
+    def do_y(self, arg):
+        self.cmdqueue.append('register 127.0.0.1:5001')
+        self.cmdqueue.append('apps')
+
+    def do_z(self, arg):
+        self.cmdqueue.append('search assets f55')
+        self.cmdqueue.append('search mmif f55')
+        self.cmdqueue.append('search app captioner')
+        #self.cmdqueue.append('')
 
 
 def parse_arguments():

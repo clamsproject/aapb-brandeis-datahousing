@@ -20,7 +20,11 @@ messages = { 'bye': 'Bye bye sailor'}
 
 COMMANDS = {
 
-    'help': ('help', 'Print available commands or help for a command'),
+    'help': ('help (COMMAND)', 'Print available commands or help for a command'),
+
+    'history': (
+        'history\n history save',
+        'Print the command history or save it to disk'),
 
     'apps': (
         'apps\n apps (APP_INDEX | APP_NAME)',
@@ -36,17 +40,22 @@ COMMANDS = {
 
     'jobs': ('jobs\n jobs NAME', 'Print list of jobs or information from one job.'),
 
+    'script': ('script FILE', 'Run the commands in the script file given'),
+
     'params': (
-        'params\n params reset\n params PARAM VALUE',
-        'Print all parameters, reset all parameters or add/change a parameter.'),
+        'params\n params reset\n params FILE\n params PARAM VALUE',
+        'Print all parameters, reset all parameters, load parameters from a JSON file'
+        ' or add/change a parameter.'),
 
     'show': ('show', 'Show current settings.'),
 
+    'describe': ('describe INT', 'describe MMIF file at the given index'),
+
     'tree': (
         'tree [-p] [-f]',
-        '\n    Print the MMIF file tree from the current path. Include MMIF files '
-        + '\n    if the -f option is added and print the parameters (if relevant) if'
-        + '\n    the -p option is added.'),
+        'Print the MMIF file tree from the current path. Include MMIF files'
+        ' if the -f option is added and print the parameters (if relevant) if'
+        ' the -p option is added.'),
 
     'pwd': ('pwd', 'Print the current path in the MMIF storage.'),
 
@@ -66,15 +75,18 @@ COMMANDS = {
     'quit': ('quit', 'Exit the ClamShack.'),
 
     'search': (
-        'search guid TERM\n search app TERM',
-        'Search for assets and mmif files matchng a GUID or an app name.'),
+        'search assets TERM'
+        '\n search mmif TERM'
+        '\n search app TERM',
+        'Search for assets or mmif files matching a string, or search for'
+        ' directories where the pipeline includes and app name.'),
 }
 
 
 class Job:
 
     def __init__(self, path):
-        self.name = path.name
+        self.name = path.stem
         self.path = path
         self.app = None
         self.command = None
@@ -194,7 +206,7 @@ def error(text: str):
 
 def message(message_type: str, color: str, text:str):
     console.print(Panel(Text(message_type, color)))
-    console.print(f' {text}\n')
+    console.print(f' {text}')
 
 
 def dribble(text: str):
@@ -208,3 +220,23 @@ def bold(text: str) -> str:
 def timestamp() -> str:
     now = datetime.now()
     return now.strftime('%Y-%m-%dT%H:%M:%S')
+
+
+def path_as_string(p: pathlib.Path) -> str:
+    """Return a string for the directory path in the MMIF storage. It abbreviates
+    the hash value of the parameters for clarity."""
+    path_string = ''
+    for app, version, hash_value in path_as_triples(p):
+        path_string += f'{app}/{version}/{hash_value[:8]}/'
+    return path_string
+
+
+def path_as_triples(p: pathlib.Path) -> list:
+    """Return the path a a list of triples <appname, appversion, paramhash."""
+    parts = p.parts
+    return [parts[i:i + 3] for i in range(0, len(parts), 3)]
+
+
+
+
+

@@ -17,6 +17,7 @@ find.sh
 uv.lock
 assets*.txt
 list-aapb-*.txt
+history.txt
 
 ### Linux ###
 *~

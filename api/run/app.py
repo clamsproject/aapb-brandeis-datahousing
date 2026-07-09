@@ -24,22 +24,24 @@ from mmif.serialize.annotation import Annotation, Document
 import api
 
 
-def run_job(name: str, location: Path, path: Path, batch: str, app: tuple, params: dict):
+def run_job(name: str, location: Path, path: Path, app: tuple, params: dict):
     # TODO: consider handing it the ClamShack instance
     # TODO: consider putting this code on ClamShack
     param_string = json.dumps(params)
     cmd = ['python', 'run_batch.py', name,
            '--location', str(location),
            '--path', str(path),
-           '--batch', batch,
            '--app-name', app.name,
            '--app-url', app.url,
            '--params', param_string]
     cmd_str = ' '.join(str(p) for p in cmd)
-    with open(location / 'jobs' / name, 'a') as fh:
+    # TODO: this code is duplicated in cli.ClamShack.job_file(), maybe hand in 
+    # the shack than just the location
+    job_file = location / 'jobs' / f'{name}.txt'
+    with open(job_file, 'a') as fh:
         fh.write(f'COMMAND\t{cmd_str}\n')
     process = subprocess.Popen(cmd, start_new_session=True)
-    with open(location / 'jobs' / name, 'a') as fh:
+    with open(job_file, 'a') as fh:
         fh.write(f'PROCESS_ID\t{process.pid}\n')
     return(process.pid)
 
