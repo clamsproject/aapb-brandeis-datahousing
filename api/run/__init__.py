@@ -24,8 +24,8 @@ DEBUG = False
 
 class ClamsApp:
 
-    """Class to wrap a CLAMS App runnning on a URL. Just there as a way to send
-    GET and POST requests and return the result in a useful format."""
+    """Class to wrap a CLAMS App runnning on a URL. Just so there is a way to
+    send GET and POST requests and return the result in a useful format."""
 
     def __init__(self, name: str, url: str):
         self.name = name
@@ -41,7 +41,8 @@ class ClamsApp:
 
     def run(self, mmif_in: Mmif, params: str) -> Mmif:
         envelope = create_envelope(mmif_in, json.loads(params))
-        response = requests.post(self.url, data=envelope, params={})
+        #response = requests.post(self.url, data=envelope, params={})
+        response = requests.post(self.url, data=envelope)
         return Mmif(response.json())
 
 

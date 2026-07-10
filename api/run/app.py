@@ -36,7 +36,7 @@ def run_job(name: str, location: Path, path: Path, app: tuple, params: dict):
            '--params', param_string]
     cmd_str = ' '.join(str(p) for p in cmd)
     # TODO: this code is duplicated in cli.ClamShack.job_file(), maybe hand in 
-    # the shack than just the location
+    # the shack rather than just the location
     job_file = location / 'jobs' / f'{name}.txt'
     with open(job_file, 'a') as fh:
         fh.write(f'COMMAND\t{cmd_str}\n')

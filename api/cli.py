@@ -1,5 +1,6 @@
 import sys
 import time
+import json
 import datetime
 import textwrap
 from cmd import Cmd
@@ -124,18 +125,17 @@ class ClamShack:
     def job_file(self, job_name: str):
         return self.jobs_dir / f'{job_name}.txt'
 
-    def search(self, term: str, assets=False, mmif=False, app=False) -> list | dict:
-        """Search assets and MMIF files given a partial guid or a partial app name."""
-        # TODO: decide on return values
-        #    - assets: list of assets and sources used in them
-        #    - mmif: dictionary of sources and the directories they occur in
-        #    - app: list of directories
-        if assets:
+    def search(self, term: str, mode: str) -> list | dict:
+        """Search assets, MMIF files and parameter definition given a search term
+        that is partial guid or a partial app name."""
+        if mode == 'assets':
             return self.mmif_index.search_assets(term)
-        elif mmif:
+        elif mode == 'mmif':
             return self.mmif_index.search_mmif(term)
-        elif app:
+        elif mode == 'app':
             return self.mmif_index.search_app(term)
+        elif mode == 'params':
+            return self.mmif_index.search_params(term)
         else:
             return []
 
@@ -231,13 +231,17 @@ class ClamShack:
         return False
 
     def run_job(self, name: str):
-        with open(self.job_file(name), 'w') as fh:
+        job_file = self.job_file(name)
+        with open(job_file, 'w') as fh:
             fh.write(f'STARTED\t{timestamp()}\n')
-        job_file = self.jobs_dir / name
         process_id = api.run.run_job(
             name, self.location, self.cwd(), self.app, self.params)
-        self._jobs.append(Path(self.jobs_dir / name))
+        self._jobs.append(job_file)
         return process_id
+
+    def index(self):
+        """Recreate the MmifIndex. Should run this after jobs are completed."""
+        self.mmif_index = MmifIndex(self)
 
     def get_settings(self):
         app = None if self.app is None else self.app.name
@@ -312,11 +316,16 @@ class MmifIndex:
     data: dict  -  { filename -> list of paths }
     dirs: set   -  directories inside of the mmif storage
 
+    This index is not updated after new files are added. It should be recreated
+    after a job has finished.
+
+    On the wishlist is to use a database instead of an in-memory object. When that's
+    the case it would be easy to let jobs updated the database. However, this is of
+    low priority since we do not have to be too worried about scale.
     """
 
-    # TODO: the index is not updated after new files were added
-
     def __init__(self, shack: ClamShack):
+        self.shack = shack
         self.sources = shack.sources
         self.data = defaultdict(list)
         self.dirs = set()
@@ -331,9 +340,12 @@ class MmifIndex:
         return f'<MiffIndex with {len(self.data)} MMIF files in {len(self.dirs)} directories>'
 
     def search_assets(self, term: str) -> list:
+        """Return a list of assets whose identifiers contain the term."""
         return [a for a in self.sources if term in str(a.name)]
 
     def search_mmif(self, term: str) -> dict:
+        """Return dictionary of sources and the directories they occur in,
+        where the sources contain the search term."""
         results = {}
         for name in self.data.keys():
             if term in name:
@@ -341,12 +353,27 @@ class MmifIndex:
         return results
 
     def search_app(self, term: str) -> list:
+        """Return a list of directories created by an app whose identifier
+        contains the term."""
         results = []
         dirs = [d for d in self.dirs if len(d.parts) % 3 == 0]
         for directory in dirs:
             triples = path_as_triples(directory)
             if triples and term in triples[-1][0]:
                 results.append(directory)
+        return results
+
+    def search_params(self, terms: list) -> list:
+        results = []
+        param, val = terms[0].split('=')
+        dirs = [d for d in self.dirs if len(d.parts) and len(d.parts) % 3 == 0]
+        for d in dirs:
+            param_file = self.shack.mmif_dir / d.parent / f'{d.name}.json'
+            with open(param_file) as fh:
+                json_obj = json.load(fh)
+                for prop in json_obj.keys():
+                    if prop == param and val == json_obj[prop]:
+                        results.append(d)
         return results
 
 
@@ -364,7 +391,8 @@ class Shell(Cmd):
 
     @classmethod
     def set_prompt(cls, shack: ClamShack):
-        cls.prompt = f'ClamShell {shack.name}> '
+        #cls.prompt = f'ClamShell {shack.name}> '
+        cls.prompt = f'🐚 ({shack.name}) '
 
     def __init__(self, clamshack: ClamShack | None):
         super().__init__()
@@ -386,6 +414,14 @@ class Shell(Cmd):
             return True
         elif line == 's':
             self.do_show(line)
+        elif line.startswith('!'):
+            # Mimicking the linux way to execute a previous command.
+            n = line[1:]
+            if n.isdigit():
+                commands = self.history
+                command = commands[int(n)-1]
+                print(command)
+                self.cmdqueue.append(command)
         elif line.startswith('shack'):
             try:
                 console.print(eval(line))
@@ -408,7 +444,8 @@ class Shell(Cmd):
         on the history list."""
         print()
         if not line.split()[0] in self.__class__.hidden_commands:
-            self.history.append(line)
+            if not line.startswith('!'):
+                self.history.append(line)
         return stop
 
     ## Core actions
@@ -429,20 +466,24 @@ class Shell(Cmd):
                     fh.write(f'{line}\n')
             console.print('History was saved to "history.txt"')
         else:
-            console.print(self.history)
+            console.print(Panel(
+                'Commands used during this session, use !INT to rerun a command'))
+            for n, command in enumerate(self.history):
+                 print(f' {n+1:2d}  {command}')
 
     def do_search(self, arg):
+        # TODO: maybe split off the parameter search in a psearch method
         if not arg:
             warning('No search parameters given')
             return
         search_type, *args = arg.split()
         if search_type == 'assets':
-            results = shack.search(term=args[0], assets=True)
+            results = shack.search(term=args[0], mode='assets')
             console.print(Panel(f'Assets matching "{args[0]}"'))
             for r in results:
                 print(f' {r.name}')
         elif search_type == 'mmif':
-            results = shack.search(term=args[0], mmif=True)
+            results = shack.search(term=args[0], mode='mmif')
             console.print(Panel(f'MMIF files matching "{args[0]}"'
                                  ' and the directories where they occur'))
             for name in results:
@@ -450,10 +491,19 @@ class Shell(Cmd):
                 for p in results[name]:
                     print('    ', path_as_string(p.parent))
         elif search_type == 'app':
-            results = shack.search(term=args[0], app=True)
+            results = shack.search(term=args[0], mode='app')
             console.print(Panel(f'Directories created by app matching "{args[0]}"'))
             for p in results:
                 print(f' {path_as_string(p)}')
+        elif search_type == 'params':
+            try:
+                results = shack.search(term=args, mode='params')
+                search_params = ' & '.join(args)
+                console.print(Panel(f'Directories created with parameter {search_params}'))
+                for result in results:
+                    print(f' {path_as_string(result)}')
+            except Exception as e:
+                warning(e)
         else:
             warning(f'Cannot search for "{arg}", use "assets", "mmif" or "app"')
             return
@@ -536,6 +586,9 @@ class Shell(Cmd):
         dribble(f'  params = {shack.params}')
         dribble(f'  pid    = {process_id}')
 
+    def do_index(self, arg):
+        shack.index()
+
     def do_script(self, arg):
         """Loads a file of commands and then run them. The file of commands has to
         be in the same format as the file that is created by the "history save"
@@ -597,7 +650,7 @@ class Shell(Cmd):
             parameter_file = shack.parameter_file()
             if parameter_file is not None:
                 print()
-                console.print(Panel(str(parameter_file)))
+                console.print(Panel(path_as_string(parameter_file)))
                 console.print(parameter_file.read_text())
 
     def do_describe(self, arg):
@@ -665,10 +718,11 @@ class Shell(Cmd):
         self.cmdqueue.append('apps')
 
     def do_z(self, arg):
-        self.cmdqueue.append('search assets f55')
-        self.cmdqueue.append('search mmif f55')
+        #self.cmdqueue.append('search assets f55')
+        #self.cmdqueue.append('search mmif f55')
         self.cmdqueue.append('search app captioner')
-        #self.cmdqueue.append('')
+        self.cmdqueue.append('search params pretty=True')
+        #self.cmdqueue.append('history')
 
 
 def parse_arguments():

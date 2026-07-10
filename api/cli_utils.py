@@ -42,6 +42,8 @@ COMMANDS = {
 
     'script': ('script FILE', 'Run the commands in the script file given'),
 
+    'index': ('index', 'Recreate the MMIF Storage index'),
+
     'params': (
         'params\n params reset\n params FILE\n params PARAM VALUE',
         'Print all parameters, reset all parameters, load parameters from a JSON file'
@@ -77,17 +79,23 @@ COMMANDS = {
     'search': (
         'search assets TERM'
         '\n search mmif TERM'
-        '\n search app TERM',
-        'Search for assets or mmif files matching a string, or search for'
-        ' directories where the pipeline includes and app name.'),
+        '\n search app TERM'
+        '\n search params (param=value)+',
+        'Search for assets or mmif files matching a string, search for'
+        ' directories where the pipeline includes and app name, or search'
+        ' for directories with files creating where the app was given certain'
+        ' parameters.'),
 }
 
 
 class Job:
 
-    def __init__(self, path):
+    def __init__(self, path: pathlib.Path):
         self.name = path.stem
         self.path = path
+        self.content = path.read_text()
+        self.lines = self.content.split('\n')
+        #print(self.content)
         self.app = None
         self.command = None
         self.started = None
@@ -98,7 +106,7 @@ class Job:
             self.started = datetime.fromisoformat(lines[0].split('\t')[1])
         if len(lines) < 3:
             # This used to happen when you call "run <job_name" without specifying 
-            # an app, resulting in a partial job file.
+            # an app, resulting in a partial job file. This may be obsolete.
             return
         command = lines[1].split('\t')[1].split()
         self.command = command
