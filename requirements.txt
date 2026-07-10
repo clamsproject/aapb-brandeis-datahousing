@@ -3,6 +3,7 @@ flask==2.*
 python-dotenv==1.*
 flask-dotenv
 gunicorn
-mmif-python==1.4.0
+mmif-python==1.4.*
+rich>=15.0.0
 clams_utils
 ./packages/inspector_mv-0.0.3.tar.gz

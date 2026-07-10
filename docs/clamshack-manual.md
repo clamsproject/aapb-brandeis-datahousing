@@ -23,6 +23,12 @@ The names used to be CLAMS Shack and CLAMS Shell, but that felt clunky with the 
 
 ### Running the Shack and the Shell
 
+This requires Python 3.11 or later and the modules named in the requirements file. Install the dependencies as follows (you may want to do in a virtual environment):
+
+```bash
+pip install -r requirements.txt
+```
+
 To create a shack:
 
 ```bash
