@@ -35,7 +35,6 @@ def main(args):
             raise e
         time_elapsed = time.time() - t0
         with open(jobs_file, 'a') as fh:
-            #print(f'--- appending {source.stem} to {jobs_file}')
             fh.write(f'GUID\t{source.stem}\t{time_elapsed:2.4f}\t{message}\n')
     with open(jobs_file, 'a') as fh:
         fh.write(f'DONE\t{timestamp()}\n')

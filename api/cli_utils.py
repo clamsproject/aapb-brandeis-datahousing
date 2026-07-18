@@ -20,11 +20,17 @@ messages = { 'bye': 'Bye bye sailor'}
 
 COMMANDS = {
 
-    'help': ('help (COMMAND)', 'Print available commands or help for a command'),
+    'help': (
+        'help\n help COMMAND',
+        'Print list of available commands or print help for a command.'),
+
+    'help_all': (
+        'help_all',
+        'Print all available commands with their help message.'),
 
     'history': (
-        'history\n history save',
-        'Print the command history or save it to disk'),
+        'history\n history reset',
+        'Print the command history or reset it.'),
 
     'apps': (
         'apps\n apps (APP_INDEX | APP_NAME)',
@@ -38,20 +44,30 @@ COMMANDS = {
         'run NAME',
         'Run a job under a unique name, assumes you selected an app.'),
 
-    'jobs': ('jobs\n jobs NAME', 'Print list of jobs or information from one job.'),
+    'jobs': (
+        'jobs\n jobs NAME',
+        'Print list of jobs or information from one job.'),
 
-    'script': ('script FILE', 'Run the commands in the script file given'),
+    'source': (
+        'source FILE',
+        'Run the commands in the script file given'),
 
-    'index': ('index', 'Recreate the MMIF Storage index'),
+    'index': (
+        'index',
+        'Recreate the MMIF Storage index'),
 
     'params': (
-        'params\n params reset\n params FILE\n params PARAM VALUE',
+        'params\n params reset\n params @FILE\n params PARAM=VALUE',
         'Print all parameters, reset all parameters, load parameters from a JSON file'
         ' or add/change a parameter.'),
 
-    'show': ('show', 'Show current settings.'),
+    'show': (
+        'show\n show error\n show errors',
+        'Show current ClamShack settings, show the last error or show all errors.'),
 
-    'describe': ('describe INT', 'describe MMIF file at the given index'),
+    'describe': (
+        'describe INT',
+        'describe MMIF file at the given index'),
 
     'tree': (
         'tree [-p] [-f]',
@@ -59,22 +75,42 @@ COMMANDS = {
         ' if the -f option is added and print the parameters (if relevant) if'
         ' the -p option is added.'),
 
-    'pwd': ('pwd', 'Print the current path in the MMIF storage.'),
+    'pwd': (
+        'pwd',
+        'Print the current path in the MMIF storage.'),
 
-    'dir': ('dir', 'Print the directories at the current path.'),
+    'dirs': (
+        'dirs\n dirs saved',
+        'Print the directories at the current path or print the last directories saved.'),
 
-    'files': ('files', 'Print the files at the current path.'),
+    'ddirs': (
+        'ddirs',
+        'Print the directory paths at the current path, printing three levels down the tree.'),
+
+    'files': (
+        'files',
+        'Print the files at the current path.'),
 
     'cd': (
         "cd '~' | '..' | PATH | INDEX",
         'Change the current path in the MMIF storage, either by spelling out the'
         ' path or by giving an index from the dir command.'),
 
-    'up': ('up', 'go up one directory in the MMIF storage.'),
+    'up': (
+        'up',
+        'Go up one directory in the MMIF storage.'),
 
-    'home': ('home', 'go to the root directory in the MMIF storage.'),
+    'home': (
+        'home',
+        'Go to the root directory in the MMIF storage.'),
 
-    'quit': ('quit', 'Exit the ClamShack.'),
+    'goto': (
+        'goto INT',
+        'Go to a saved directory given the index.'),
+
+    'quit': (
+        'quit',
+        'Exit the ClamShack.'),
 
     'search': (
         'search assets TERM'
@@ -95,39 +131,26 @@ class Job:
         self.path = path
         self.content = path.read_text()
         self.lines = self.content.split('\n')
-        #print(self.content)
         self.app = None
-        self.command = None
+        self.command = []
+        self.pid = None
         self.started = None
         self.finished = None
         self.guids = []
-        lines = path.read_text().split('\n')
-        if lines:
-            self.started = datetime.fromisoformat(lines[0].split('\t')[1])
-        if len(lines) < 3:
-            # This used to happen when you call "run <job_name" without specifying 
-            # an app, resulting in a partial job file. This may be obsolete.
-            return
-        command = lines[1].split('\t')[1].split()
-        self.command = command
-        self.app = command[command.index('--app-name') + 1]
-        self.pid = lines[2].split('\t')[1]
-        n = 2
-        # not including 'python', 'run_batch.py' and the name of the job
-        pairs = [self.command[3:][i : i + n] for i in range(0, len(command), n)]
-        # the parameters at the end do funky stuff so only taking the pairs
-        pairs = [p for p in pairs if len(p) == 2]
-        for pair in pairs:
-            param, value = pair
-            if param == '--app':
-                self.app = value
-        for line in lines[3:]:
-            if line:
-                fields = line.strip().split()
-                if fields[0] == 'GUID':
-                    self.guids.append(fields[1:4])
-                elif fields[0] == 'DONE':
-                    self.finished = datetime.fromisoformat(fields[1])
+        for line in path.read_text().split('\n'):
+            if line.startswith('STARTED'):
+                self.started = datetime.fromisoformat(line.split('\t')[1])
+            elif line.startswith('DONE'):
+                self.finished = datetime.fromisoformat(line.split('\t')[1])
+            elif line.startswith('COMMAND'):
+                command = line.split('\t')[1].split()
+                self.command = command
+                self.app = command[command.index('--app-name') + 1]
+            elif line.startswith('PROCESS_ID'):
+                self.pid = line.split('\t')[1]
+            elif line.startswith('GUID'):
+                fields = line.split('\t')
+                self.guids.append(fields[1:4])
 
     def __str__(self):
         return f'<Job {self.name} app={self.app}>'
@@ -155,9 +178,8 @@ class Job:
 
 
 def walk_directory(directory: pathlib.Path, tree: Tree, full) -> None:
-    """Recursively build a Tree with directory contents."""
-    # Sort dirs first then by filename
-    # Adapted from https://github.com/Textualize/rich/blob/main/examples/tree.py
+    """Recursively build a Tree with directory contents. Adapted from
+    https://github.com/Textualize/rich/blob/main/examples/tree.py."""
     paths = sorted(
         pathlib.Path(directory).iterdir(),
         key=lambda path: (path.is_file(), path.name.lower()))
@@ -184,11 +206,14 @@ def walk_directory(directory: pathlib.Path, tree: Tree, full) -> None:
             tree.add(Text(icon) + text_filename)
 
 
-def get_tree(directory, full=False):
+def get_tree(directory, prefix=pathlib.Path('.'), full=False):
     # Adapted from https://github.com/Textualize/rich/blob/main/examples/tree.py
+    root = pathlib.Path(*directory.parts[len(prefix.parts):])
+    root = path_as_string(root)
+    root = root if root else "."
     tree = Tree(
-        f":open_file_folder: [link file://{directory}]{directory}",
-        guide_style="bold bright_blue")
+        f":open_file_folder: [link file://{directory}]{root}",
+        style="bold bright_blue", guide_style="bold bright_blue")
     walk_directory(pathlib.Path(directory), tree, full)
     return tree
 
@@ -205,15 +230,16 @@ def info(text: str):
 
 
 def warning(text: str):
-    message('WARNING', 'bold dark_orange', text)
+    message('WARNING', 'bold', text)
+    #message('WARNING', 'bold dark_orange', text)
 
 
 def error(text: str):
     message('ERROR', 'bold dark_red', text)
 
 
-def message(message_type: str, color: str, text:str):
-    console.print(Panel(Text(message_type, color)))
+def message(message_type: str, style: str, text:str):
+    console.print(Panel(Text(message_type, style)))
     console.print(f' {text}')
 
 
@@ -234,13 +260,19 @@ def path_as_string(p: pathlib.Path) -> str:
     """Return a string for the directory path in the MMIF storage. It abbreviates
     the hash value of the parameters for clarity."""
     path_string = ''
-    for app, version, hash_value in path_as_triples(p):
-        path_string += f'{app}/{version}/{hash_value[:8]}/'
+    for triple in path_as_tuples(p):
+        if len(triple) == 3:
+            app, version, hash_value = triple
+            path_string += f'{app}/{version}/{hash_value[:8]}/'
+        else:
+            path_string += '/'.join([p for p in triple])
     return path_string
 
 
-def path_as_triples(p: pathlib.Path) -> list:
-    """Return the path a a list of triples <appname, appversion, paramhash."""
+def path_as_tuples(p: pathlib.Path) -> list[tuple]:
+    """Return the path a a list of tuples <appname, appversion, paramhash>. The
+    last element in the list is not necessarily a tuple of lenth 3, it could also
+    be <appname, appversion> or <appname>."""
     parts = p.parts
     return [parts[i:i + 3] for i in range(0, len(parts), 3)]
 

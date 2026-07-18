@@ -23,7 +23,7 @@ The names used to be CLAMS Shack and CLAMS Shell, but that felt clunky with the 
 
 ### Running the Shack and the Shell
 
-This requires Python 3.11 or later and the modules named in the requirements file. Install the dependencies as follows (you may want to do in a virtual environment):
+This requires Python 3.12 or later and the modules named in the requirements file. Install the dependencies as follows (you may want to do this in a virtual environment):
 
 ```bash
 pip install -r requirements.txt
@@ -56,7 +56,7 @@ The prompt in the terminal is a shell symbol followed by the name of the Shack:
 
 ## 2. Assets
 
-Every ClamShack is associated with an assets list, this association can be made only once, once you have specified a set of assets you cannot change them anymore, you would have to create a new Shack if you want to do that.
+Every ClamShack is associated with an assets list, this association can be made only once when you create a new shack. Once you have specified a set of assets you cannot change them anymore, you would have to create a new Shack if you want to do that.
 
 > This may be changed at some point and we may allow extra assets to be added later. For now we like how this makes sure you always now that each job that was run for this Shack has always applied to the same assets. It constrains what you can do and hence cuts down on a lot of potentially confusing extra functionality.
 
@@ -191,17 +191,17 @@ The first commands list the registered apps and the second selects one using the
 
 ### Step 4: Set parameters
 
-In case the app defaults are not appropriate you can set parameters one by one with the `params <param> <value>` command.
+In case the app defaults are not appropriate you can set parameters one by one with the `params <param>=<value>` command.
 
 ```
-🐚 (test) params pretty True
+🐚 (test) params pretty=True
 {'pretty': 'True'}
 
-🐚 (test) params threshold 3
+🐚 (test) params threshold=3
 {'pretty': 'True', 'threshold': '3'}
 ```
 
-Use `params reset` to reset the parameters to an empty dictionary. This breaks down when you have too many parameters or when parameters are verbose. For those cases you can create a JSON file with parameters, put it in the Shack and then load them. For example, suppose we have a file named params.json with the following content:
+The parameter name should not have an equal sign in it and parameters and values should not have whitespace in them. Use `params reset` to reset the parameters to an empty dictionary. Setting parameters by hand breaks down when you have too many parameters or when parameters are too verbose. For those cases you can create a JSON file with parameters, put it in the Shack and then load them. For example, suppose we have a file named params.json with the following content:
 
 ```json
 {
@@ -218,6 +218,8 @@ You then load the file to set the parameters:
 🐚 (test) params params.json
 {'pretty': True, 'logging': 'on', 'threshold': 3, 'choices': ['yes', 'no', 'maybe']}
 ```
+
+Loading parameters from a file will start from a clean slate, that is, previously set parameters will be removed. However, subsequently setting additonal parameters manually will not remove existing parameters and manually changing a parameter will only effect that parameter.
 
 
 ### Step 5: Input selection
@@ -331,14 +333,14 @@ For readability purposes only the first 8 of the 32 characters in the hash value
 🐚 (aapb-public-fragments) search params pretty=True threshold=3
 ```
 
+For the `params` option, you can only search for atomic values.
 
-### Using scripts
 
-There is a `history` command that shows all used in the shell since it was started and a `history` command that writes all commands to a file named `history.txt` in the directory from where the shell was started.
+### History and using scripts
 
-> At some point the history file will be saved in the Shack.
+There is a `history` command that shows all commands used in the shell since the ClamShack was created, and a `history reset` command that resets the history.
 
-There is also a `script <script_file>` command that takes a file with the same syntax as the history file and then executes all commands in it. For example, assume you have a file named `example-script.txt` with the following content:
+There is also a `source <script_file>` command that takes a file with the same syntax as the history file and then executes all commands in it. For example, assume you have a file named `example-script.txt` with the following content:
 
 ```
 cd 0
@@ -354,6 +356,15 @@ If this file is in the directory from where you started the shack, then you can 
 🐚 (aapb-public-fragments) script example-script.txt
 ```
 
-This is meant to help set up jobs, which can become tedious especially when you have a bunch of jobs that are quite similar and just differ in what parameters are set or what the input is.
+This is meant to help set up jobs, which can be a tedious task especially when you have a bunch of jobs that are quite similar and just differ in what parameters are set or what the input is.
+
+Empty lines and lines starting with a `#` are ignored.
 
 > These scripts are not saved in the shack. In a future version there may be some utilities to manage scripts.
+
+
+### Errors and logs
+
+Under the hood, the ClamShell and the ClamShack keep some logs and store errors. When you get a warning that an unexpected error occured you can use "show error" to see the error or "show errors" for all errors that occurred during a session.
+
+This kind of error is the kind of error that you may want to report. In your shack there are two files `.errors` and `.history` that would be very helpfull for debugging. 
