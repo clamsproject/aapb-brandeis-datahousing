@@ -1,6 +1,7 @@
 import sys
 import time
 import json
+import shutil
 import datetime
 import textwrap
 import traceback
@@ -32,6 +33,9 @@ from api.cli_utils import path_as_string, path_as_tuples
 DEBUG = False
 
 
+class ShackError(Exception): pass
+
+
 class ClamShack:
 
     """
@@ -51,6 +55,7 @@ class ClamShack:
         self.jobs_dir = self.location / 'jobs'
         self.assets_file = self.assets_dir / 'list.txt'
         self.history_file = self.location / '.history'
+        self.queue_file = self.location / '.queue'
         self.error_file = self.location / '.errors'
         if assets is not None:
             if self.location.exists():
@@ -61,22 +66,25 @@ class ClamShack:
         self.add_assets(assets)
         self._assets = Assets(self)
         self.mmif_index = MmifIndex(self)
-        self.path = Path('.')  # the current working path inside the mmif directory
+        self.path = Path('.')    # the current working path inside the mmif directory
         self._jobs = [p for p in self.jobs_dir.iterdir() if p.suffix == '.txt']
         self.history = History(self.history_file)
         self.apps = api.run.APPS
-        self.app = None         # selected app for a batch job
-        self.params_file = None  # inout file used to set parameters
-        self.params = {}        # run-time parameters
+        self.app = None          # selected app for a batch job
+        self.params_file = None  # input file used to set parameters
+        self.params = {}         # run-time parameters
 
     def create_directory_structure(self):
-        """Create the directory scaffolding."""
+        """Create the directory scaffolding. The files are just touched so that we
+        are certain they exist, the exception is the queue file which we make sure
+        is empty when we start a shack."""
         for p in (self.location, self.assets_dir, self.mmif_dir,
                   self.sources_dir, self.jobs_dir):
             p.mkdir(exist_ok=True)
         self.assets_file.touch()
         self.history_file.touch()
         self.error_file.touch()
+        self.queue_file.write_text('')
 
     def is_clams_directory(self) -> bool:
         """Return True if the directory appears to contain a ClamShack, return False
@@ -119,6 +127,10 @@ class ClamShack:
             jobs[job.name] = job
         return jobs
 
+    @property
+    def index(self):
+        return self.mmif_index
+
     def __str__(self):
         return f'<ClamShack "{self.location}" assets={len(self.assets)}>'
 
@@ -127,7 +139,8 @@ class ClamShack:
 
     def search(self, term: str, mode: str) -> list | dict:
         """Search assets, MMIF files and parameter definition given a search term
-        that is partial guid or a partial app name."""
+        that is a partial guid or a partial app name."""
+        self.mmif_index.dequeue()
         if mode == 'assets':
             return self.mmif_index.search_assets(term)
         elif mode == 'mmif':
@@ -210,16 +223,24 @@ class ClamShack:
         else:
             return None
 
-    def cd(self, path: str):
+    def cd(self, path: str) -> str:
         """Change the current MMIF path. Assumes that the input was vetted by
         the Shell."""
         if path == '~':
             self.path = Path('.')
+            return '~'
         elif path == '..':
             # TODO: also allow for ../.. and then do the right thing
             self.path = self.path.parent
+            return str(self.path)
         else:
-            self.path = self.path / path
+            rel_path = Path(self.cwd()) / path
+            full_path = self.mmif_dir / rel_path
+            if full_path.is_dir():
+                self.path = rel_path
+                return str(self.path)
+            else:
+                raise ShackError(f'Directory "{path}" does not exist')
 
     def register(self, url: str):
         api.run.register_app(url)
@@ -236,9 +257,17 @@ class ClamShack:
         process_id = api.run.run_job(timestamp(), name, self)
         return process_id
 
-    def index(self):
+    def reindex(self):
         """Recreate the MmifIndex. Should run this after jobs are completed."""
         self.mmif_index = MmifIndex(self)
+
+    def prune(self):
+        if str(self.path) in ('.', '~', ''):
+            raise ShackError('Cannot delete the MMIF root directory')
+        spath = StoragePath(self, str(self.cwd()))
+        spath.rmtree()
+        self.reindex()
+        self.cd('..')
 
     def get_history(self):
         return [(n+1, command) for n, command in enumerate(self.history.data)]
@@ -299,20 +328,25 @@ class Assets:
                 print(f'  {k}  -->  {self.sources[k]}')
 
 
-class StoragePath(Path):
+class StoragePath():
 
-    """A regular Path with some extra functionality relevant to the MMIF storage
-    that the path is in."""
+    """Embeds a regular Path and provides some extra data and functionality relevant
+    to the MMIF storage that the path is in."""
 
     def __init__(self, shack: ClamShack, path: str = ''):
-        """Initialize as a Path and add some extra information to it."""
-        full_path = Path(shack.mmif_dir) / path
-        super().__init__(str(full_path))
+        """Initialize an instance that has access to the ClamShacka Path and add some extra information to it. The path
+        parameter contains the relative path from the mmif root directory or the
+        full path including the Shack's mmif directory."""
+        if str(path).startswith(str(shack.mmif_dir)):
+            full_path = Path(path)
+            rel_path = Path(*full_path.parts[len(shack.mmif_dir.parts):])
+        else:
+            full_path = Path(shack.mmif_dir) / path
+            rel_path = Path(path)
         self.shack = shack
         self.mmif_dir = shack.mmif_dir
         self.full_path = full_path
-        self.rel_path = Path(path)
-        # Making sure that the root path in the storage does not have a name.
+        self.rel_path = rel_path
         self._name = self.rel_path.name
 
     def __str__(self):
@@ -329,14 +363,38 @@ class StoragePath(Path):
         return self._name
 
     @property
+    def stem(self):
+        """The stem of the relative path, if any."""
+        return self.rel_path.stem
+
+    @property
     def shortname(self):
         """Shortened name of the full path."""
-        return path_as_string(self)
+        return path_as_string(self.full_path)
     
     @property
     def shortrelname(self):
         """Shortened name of the relative path."""
         return path_as_string(self.rel_path)
+
+    @property
+    def parts(self):
+        return self.full_path.parts
+
+    def is_dir(self):
+        return self.full_path.is_dir()
+
+    def is_file(self):
+        return self.full_path.is_file()
+
+    def iterdir(self):
+        return self.full_path.iterdir()
+
+    def pp(self):
+        print(f'\n{self}')
+        print(f'  mmif_dir  = {self.mmif_dir}')
+        print(f'  rel_path  = {self.rel_path}')
+        print(f'  full_path = {self.full_path}\n')
 
     def ddir(self):
         paths = []
@@ -347,6 +405,19 @@ class StoragePath(Path):
                 paths.append(
                     (Path(*root.parts[prefix_length:]), Path(*root.parts[-3:]) ))
         return paths
+
+    def rmtree(self, indent=''):
+        """Delete the path from the storage, if there is a sister path with the
+        same name with a .json suffix, then delete that file as well."""
+        shutil.rmtree(str(self.full_path))
+        properties_file = StoragePath(
+            self.shack, f'{str(self.full_path.parent)}/{self.name}.json')
+        if properties_file.is_file():
+            properties_file.unlink()
+
+    def unlink(self):
+        """Remove the file from the storage and from the index."""
+        self.full_path.unlink()
 
 
 class History:
@@ -426,6 +497,34 @@ class MmifIndex:
     def __str__(self):
         return f'<MiffIndex with {len(self.data)} MMIF files in {len(self.dirs)} directories>'
 
+    def enqueue(self, path):
+        with open(self.shack.queue_file, 'a') as fh:
+            fh.write(f'{str(path)}\n')
+
+    def dequeue(self):
+        """Check whether there is a queue (tested by checking the file size). If
+        there is upate the index and rest the queue."""
+        filesize = self.shack.queue_file.stat().st_size
+        if filesize > 0:
+            content = self.shack.queue_file.read_text()
+            for line in content.split('\n'):
+                if not line:
+                    continue
+                p = Path(line)
+                d1 = p.parent
+                d2 = d1.parent
+                d3 = d2.parent
+                guid = p.stem
+                for d in (d1, d2, d3):
+                    if d not in self.dirs:
+                        #print(f'adding {path_as_string(d)}')
+                        self.dirs.add(d)
+                self.data.setdefault(guid, [])
+                if d1 not in self.data[guid]:
+                    self.data.setdefault(guid, []).append(d1)
+                    #print(f'adding {guid}\n       {path_as_string(d1)}')
+            self.shack.queue_file.write_text('')
+
     def search_assets(self, term: str) -> list:
         """Return a list of assets whose identifiers contain the term."""
         return [a for a in self.sources if term in str(a.name)]
@@ -433,8 +532,11 @@ class MmifIndex:
     def search_mmif(self, term: str) -> dict:
         """Return dictionary of sources and the directories they occur in,
         where the sources contain the search term."""
+        # TODO. Is this actually useful? If a MMIF file is in there as a source
+        # it will also appear in every directory except for those cases when no
+        # output was created.
         results = {}
-        for name in self.data.keys():
+        for name in sorted(self.data.keys()):
             if term in name:
                 results[name] = self.data[name]
         return results
@@ -444,8 +546,10 @@ class MmifIndex:
         contains the term."""
         results = []
         dirs = [d for d in self.dirs if len(d.parts) % 3 == 0]
+        print(dirs)
         for directory in dirs:
             triples = path_as_tuples(directory)
+            # try to match on the app part of the last triple in the path
             if triples and term in triples[-1][0]:
                 results.append(directory)
         return results
@@ -468,6 +572,27 @@ class MmifIndex:
                 results.append(d)
         return results
 
+    def remove_dir(self, path: StoragePath):
+        """Remove the directory path from the self.dirs set."""
+        #print('-D-', path_as_string(path.rel_path))
+        self.dirs.remove(path.rel_path)
+
+    def remove_file(self, path: StoragePath):
+        """Remove the file path from all lists in the self.data dictionary."""
+        #print('-F-', path.name)
+        for fname in self.data:
+            if fname == path.stem:
+                paths = self.data[fname]
+                new_paths = [p for p in paths if not path.rel_path == p]
+                self.data[fname] = new_paths
+        self.data = {k:v for k,v in self.data.items() if v}
+
+    def pp(self):
+        print(self)
+        print('>>> dirs')
+        for d in sorted(self.dirs):
+            print(path_as_string(d))
+
 
 class Shell(Cmd):
 
@@ -477,7 +602,7 @@ class Shell(Cmd):
     prompt = None
 
     # Hidden commands are not advertized to the user when they type 'help'
-    hidden_commands = {'t', 'x', 'y', 'z', 'nl', 'new', 'echo'}
+    hidden_commands = {'s', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'nl', 'echo'}
 
     @classmethod
     def set_prompt(cls, shack: ClamShack):
@@ -517,6 +642,7 @@ class Shell(Cmd):
             if n.isdigit():
                 command = self.shack.history.index[int(n)]
                 #console.print(Panel(f'{line} --> {command}'))
+                print(command)
                 self.cmdqueue.append(command)
         elif line == 'shack' or line.startswith('shack.'):
             # NOTE: why does this work now that the global variable is history?
@@ -744,13 +870,13 @@ class Shell(Cmd):
         process_id = self.shack.run_job(arg)
         console.print(Panel('Started job'))
         dribble(f'  name   = {arg}')
-        dribble(f'  path   = {self.shack.cwd()}')
+        dribble(f'  path   = {path_as_string(self.shack.cwd())}')
         dribble(f'  app    = {self.shack.app}')
         dribble(f'  params = {self.shack.params}')
         dribble(f'  pid    = {process_id}')
 
     def do_index(self, arg):
-        self.shack.index()
+        self.shack.reindex()
         print('Recreated the MMIF Index')
 
     def do_source(self, arg):
@@ -814,14 +940,11 @@ class Shell(Cmd):
         subdirs = { n: str(p) for n, p in enumerate(self.shack.subdirs()) }
         if arg.isnumeric() and int(arg) in subdirs:
             arg = subdirs[int(arg)]
-        # get the new path
-        p = Path(self.shack.mmif_dir / self.shack.cwd() / arg)
-        # now check for existence or whether we are going back home
-        if p.exists() or arg == '~':
-            self.shack.cd(arg)
-            #console.print(f'New path: {self.shack.cwd()}')
-        else:
-            print('No such directory')
+        try:
+            new_path = self.shack.cd(arg)
+            print(path_as_string(Path(new_path)))
+        except ShackError as e:
+            warning(e)
 
     def do_home(self, arg):
         self.do_cd('~')
@@ -830,7 +953,8 @@ class Shell(Cmd):
         try:
             repetitions = int(arg) if arg else 1
             for i in range(repetitions):
-                self.do_cd('..')
+                self.shack.cd('..')
+            print(path_as_string(self.shack.path))
         except ValueError:
             warning('The argument can only be an integer')
 
@@ -838,6 +962,9 @@ class Shell(Cmd):
         args = arg.split()
         full = True if '-f' in args else False
         parameters = True if '-p' in args else False
+        if '-v' in args:
+            full = True
+            parameters = True
         prefix = self.shack.mmif_dir
         t = get_tree(self.shack.mmif_dir / self.shack.path, prefix=prefix, full=full)
         console.print(Panel('MMIF File tree'))
@@ -858,13 +985,33 @@ class Shell(Cmd):
             if directory is None:
                 warning('There is no saved directory at that index')
                 return
-            self.cmdqueue.append(f'echo cd {directory}')
-            self.cmdqueue.append(f'cd {directory}')
-            self.cmdqueue.append('s')
-            self.cmdqueue.append('tree -p')
+            self.shack.cd(str(directory))
+            #print(path_as_string(directory))
+            self.do_tree('-p')
         except ValueError:
             warning('goto command requires an integer')
 
+    def do_prune(self, arg):
+        try:
+            text = Text(f'\n Deleting {path_as_string(self.shack.cwd())}\n')
+            text.stylize("bold red")
+            console.print(text)
+            answer = input(' Continue? (y/n) ')
+            if answer == 'y':
+                self.shack.prune()
+            console.print(Panel(f' Deleted {path_as_string(self.shack.cwd())}'))
+        except ShackError as e:
+            warning(e)
+
+    def do_view(self, arg):
+        saved_path = self.shack.path
+        if saved_path == '.':
+            saved_path = '~'
+        self.do_goto(arg)
+        self.shack.cd('~')
+        #self.do_view(arg)
+        self.shack.cd(str(saved_path))
+        
     def do_describe(self, arg):
         if not arg.isdigit():
             warning('The argument must be an integer')
@@ -900,20 +1047,28 @@ class Shell(Cmd):
             print_help(*COMMANDS.get(cmd,('','')))
 
     def do_echo(self, arg):
+        """Just a utility method to use in scripts, may be deprecated."""
         print(f'>>> {arg}')
 
     def do_nl(self, arg):
-        # Useful when adding mulitple commands to the queue.
+        # Utility command for when adding multiple commands to the queue, may be
+        # deprecated.
         print()
 
     ## Undocumented actions for debugging and development
 
-    def do_new(self, arg):
-        """Staging method for new functionality."""
-        pass
+    def do_s(self, arg):
+        self.cmdqueue.append('source example-script.txt')
 
     def do_t(self, arg):
-        self.cmdqueue.append('script s.txt')
+        #self.cmdqueue.append('search assets f55')
+        #self.cmdqueue.append('search mmif f55')
+        #self.cmdqueue.append('search app captioner')
+        self.cmdqueue.append('search app spac')
+        #self.cmdqueue.append('view 0')
+        self.cmdqueue.append('goto 0')
+        #self.cmdqueue.append('search params pretty=True')
+        #self.cmdqueue.append('search params pretty=True threshold=3')
 
     def do_x(self, arg):
         self.cmdqueue.append('register http://127.0.0.1:5001')
@@ -934,23 +1089,14 @@ class Shell(Cmd):
         self.cmdqueue.append('apps')
 
     def do_z(self, arg):
-        #self.cmdqueue.append('search assets f55')
-        #self.cmdqueue.append('search mmif f55')
-        #self.cmdqueue.append('search app captioner')
-        #self.cmdqueue.append('search params pretty=True')
-        #self.cmdqueue.append('search params pretty=True threshold=3')
-        #self.cmdqueue.append('goto 0')
-        self.cmdqueue.append('ddirs')
-        self.cmdqueue.append('cd swt-detection/v8.6/d41d8cd98f00b204e9800998ecf8427e/smolvlm2-captioner/v1.0/d41d8cd98f00b204e9800998ecf8427e')
-        self.cmdqueue.append('ddirs')
-        #self.cmdqueue.append('dirs saved')
-        #self.cmdqueue.append('search params pretty')
+        #self.cmdqueue.append('ddirs')
+        #self.cmdqueue.append('cd swt-detection/v8.6/d41d8cd98f00b204e9800998ecf8427e/smolvlm2-captioner/v1.0/d41d8cd98f00b204e9800998ecf8427e')
+        self.cmdqueue.append('source s.txt')
+        #self.cmdqueue.append('run t1')
+        #self.cmdqueue.append('search app spacy')
 
-
-
-def throw_error():
-    """Debugging method, add this to a do_x method if you want it to raise an error."""
-    1/0
+    def do_w(self, arg):
+        self.cmdqueue.append('source s2.txt')
 
 
 def parse_arguments():

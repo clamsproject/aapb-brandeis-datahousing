@@ -1,6 +1,5 @@
 
 class StorageServerError(Exception):
-    
     pass
 
 

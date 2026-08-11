@@ -9,9 +9,11 @@ The ClamShack and the ClamShell together form a tool for running CLAMS applicati
 
 Assumptions:
 
-- Relatively small Shack sizes, no more than a thousand assets. Also, once a Shack is initialized with a set of assets you cannot add or remove assets later. 
+- Relatively small Shack sizes, no more than a thousand assets.
+- Once a Shack is initialized with a set of assets you cannot add or remove assets later.
 - There is some way to get the type (video or text) from the assets path.
-- Assets have unique identifiers. The only exception are when there is the same identifier for a video asset and a text asset, which are then assumed to be different modalities of the same asset.
+- When running a job, existing files in the storage will never be overwritten. However, you should be able to explicitly remove all results from a job (which would also remove any downstream results).
+- Assets have unique identifiers. The only exception is when there is the same identifier for a video asset and a text asset, which are then assumed to be different modalities of the same asset.
 - MMIF files always end with `.mmif`.
 - All asset and MMIF file management happens through the Shack.
 - All assets are available on a local or mounted disk.
@@ -212,14 +214,14 @@ The parameter name should not have an equal sign in it and parameters and values
 }
 ```
 
-You then load the file to set the parameters:
+You then load the file to set the parameters (note the @ symbol before the file name):
 
 ```
-🐚 (test) params params.json
+🐚 (test) params @params.json
 {'pretty': True, 'logging': 'on', 'threshold': 3, 'choices': ['yes', 'no', 'maybe']}
 ```
 
-Loading parameters from a file will start from a clean slate, that is, previously set parameters will be removed. However, subsequently setting additonal parameters manually will not remove existing parameters and manually changing a parameter will only effect that parameter.
+Loading parameters from a file will start from a clean slate, that is, previously set parameters will be removed. However, after loading parameters from a file subsequently setting additonal parameters manually will not remove existing parameters and manually changing a parameter will only effect that parameter.
 
 
 ### Step 5: Input selection

@@ -70,10 +70,10 @@ COMMANDS = {
         'describe MMIF file at the given index'),
 
     'tree': (
-        'tree [-p] [-f]',
+        'tree [-p] [-f] [-v]',
         'Print the MMIF file tree from the current path. Include MMIF files'
         ' if the -f option is added and print the parameters (if relevant) if'
-        ' the -p option is added.'),
+        ' the -p option is added, include both with the -v option.'),
 
     'pwd': (
         'pwd',
@@ -97,8 +97,8 @@ COMMANDS = {
         ' path or by giving an index from the dir command.'),
 
     'up': (
-        'up',
-        'Go up one directory in the MMIF storage.'),
+        'up\n up N',
+        'Go up one directory in the MMIF storage or go up N levels.'),
 
     'home': (
         'home',
@@ -107,6 +107,14 @@ COMMANDS = {
     'goto': (
         'goto INT',
         'Go to a saved directory given the index.'),
+
+    'prune': (
+        'prune',
+        'Prune the current directory and everything underneath. This cannot be undone.'),
+
+    'view': (
+        'view INT',
+        'View a directory given the index.'),
 
     'quit': (
         'quit',
@@ -177,6 +185,19 @@ class Job:
         return table
 
 
+def get_tree(directory, prefix=pathlib.Path('.'), full=False) -> Tree:
+    """Get a rich.Tree instance starting at the given directory. Adapted from
+    https://github.com/Textualize/rich/blob/main/examples/tree.py."""
+    root = pathlib.Path(*directory.parts[len(prefix.parts):])
+    root = path_as_string(root)
+    root = root if root else "."
+    tree = Tree(
+        f":open_file_folder: [link file://{directory}]{root}",
+        style="bold bright_blue", guide_style="bold bright_blue")
+    walk_directory(pathlib.Path(directory), tree, full)
+    return tree
+
+
 def walk_directory(directory: pathlib.Path, tree: Tree, full) -> None:
     """Recursively build a Tree with directory contents. Adapted from
     https://github.com/Textualize/rich/blob/main/examples/tree.py."""
@@ -204,18 +225,6 @@ def walk_directory(directory: pathlib.Path, tree: Tree, full) -> None:
             text_filename.append(f" ({decimal(file_size)})", "blue")
             icon = "🐍 " if path.suffix == ".py" else "📄 "
             tree.add(Text(icon) + text_filename)
-
-
-def get_tree(directory, prefix=pathlib.Path('.'), full=False):
-    # Adapted from https://github.com/Textualize/rich/blob/main/examples/tree.py
-    root = pathlib.Path(*directory.parts[len(prefix.parts):])
-    root = path_as_string(root)
-    root = root if root else "."
-    tree = Tree(
-        f":open_file_folder: [link file://{directory}]{root}",
-        style="bold bright_blue", guide_style="bold bright_blue")
-    walk_directory(pathlib.Path(directory), tree, full)
-    return tree
 
 
 def log(fun):
@@ -263,10 +272,13 @@ def path_as_string(p: pathlib.Path) -> str:
     for triple in path_as_tuples(p):
         if len(triple) == 3:
             app, version, hash_value = triple
-            path_string += f'{app}/{version}/{hash_value[:8]}/'
+            if hash_value.endswith('.json'):
+                path_string += f'{app}/{version}/{hash_value[:8]}.json'
+            else:
+                path_string += f'{app}/{version}/{hash_value[:8]}/'
         else:
             path_string += '/'.join([p for p in triple])
-    return path_string
+    return path_string if path_string else '~'
 
 
 def path_as_tuples(p: pathlib.Path) -> list[tuple]:

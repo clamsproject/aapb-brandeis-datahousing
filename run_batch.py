@@ -5,6 +5,7 @@ import argparse
 from pathlib import Path
 
 from mmif import Mmif
+#from mmif.utils.workflow_helper import generate_workflow_identifier
 
 import api
 from api.cli import ClamShack, timestamp
@@ -15,7 +16,8 @@ from api.errors import StorageWarning
 
 def main(args):
     """Set up a ClamShack instance, determine the input and run the selected app
-    on all the input files."""
+    on all the input files. This does not allow anything to be overwritten in the
+    storage."""
     jobs_file = Path(args.location) / 'jobs' / f'{args.name}.txt'
     shack = ClamShack(args.location, None)
     shack.app = ClamsApp(args.app_name, args.app_url)
@@ -26,7 +28,8 @@ def main(args):
             mmif_in = Mmif(source.read_text())
             mmif_out = shack.app.run(mmif_in, args.params)
             serialized_mmif = mmif_out.serialize(pretty=True)
-            path = upload_mmif(serialized_mmif, root=shack.mmif_dir)
+            path = upload_mmif(serialized_mmif, root=shack.mmif_dir, overwrite=False)
+            shack.mmif_index.enqueue(path)
             message = 'SUCCES'
         except StorageWarning as e:
             message = f'{e}'
@@ -38,7 +41,7 @@ def main(args):
             fh.write(f'GUID\t{source.stem}\t{time_elapsed:2.4f}\t{message}\n')
     with open(jobs_file, 'a') as fh:
         fh.write(f'DONE\t{timestamp()}\n')
-    
+
 
 def get_input_files(shack: ClamShack, path: str) -> list:
     """Get the input to run on, either the sources or the MMIF result from
