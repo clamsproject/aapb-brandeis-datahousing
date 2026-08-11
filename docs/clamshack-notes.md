@@ -7,6 +7,8 @@ Most of the following notes are relevant to Brandeis developers only.
 
 The ClamShack code is based on the MMIF Storage code where recreating a source potentially introduces non-determinism of workflow results. We are considering an approach where we can have multiple sources for a GUID. For the ClamShack this is not a problem though because MMIF sources will never be recreated.
 
+Creating MMIF sources does not use the code in the `mmif source` utility. That code seems oddly complex and should be revised.
+
 Todo:
 
 - Make sure that the mime type is properly derived from the path, at the moment it expects there to be a path part that matches `text` or `video`.
@@ -16,10 +18,7 @@ Todo:
 
 ### Workflows and ClamsApps
 
-Todo:
-
-- For the registration step we admonish users to not forget the scheme and blabber about the differences between curl and register. Just update the register command so it prepends the scheme if it is not there.
-- You could run SWT on the MMIF sources, and while this job runs create a second job that runs the captioner on the output of SWT. This won't work because the captioner will then not apply to all assets because they won't be there. For example, if the captioner starts when SWT has not created output yet then the captioner will immediately exit. Maybe add some checks that make sure this cannot happen.
+You could run SWT on the MMIF sources, and while this job runs create a second job that runs the captioner on the output of SWT. This won't work because the captioner will then not apply to all assets because they won't be there. For example, if the captioner starts when SWT has not created output yet then the captioner will immediately exit. Maybe add some checks that make sure this cannot happen.
 
 
 ### MMIF storage
@@ -150,12 +149,11 @@ clamshack> register http://127.0.0.1:5052
 
 ### Search
 
-Distinguish between several kinds of search.
+Searchig the contents of the parameter files is in progress.
 
-- Asset search on GUIDs. This is already implemented.
-- MMIF file search on GUIDs, apps and workflow properties. The first could be folded into the asset search. On apps and/or workflow properties we should search every part of the workflow, for example, a spaCy result is still a spaCy result if it is in the last step of a workflow.
-- Searchig the contents of the parameter files.
-- A mix of search inputs, for example GUIDs and apps.
+Maybe introduce mix of search inputs, for example GUIDs and apps.
+
+Perhaps allow search for MMIF files to start from a particular directory.
 
 
 ### Jobs
@@ -167,6 +165,7 @@ Todo:
 - Jobs overide prior results, perhaps add a flag as with the storage upload to allow/disallow overwrite.
 - They are less fragile than they used to be, but should still consider using a Job class that reads the job file and perhaps some changes to the format and content of the job file: (1) separate lines to represent things like batch info, app name, parameters etcetera, (2) add a count of files to be processed (allows later inspection of the file to print a percentage done number). 
 - Make sure that files like '.DS_store' and others that are not jobs will be skipped, should be done in ClamShack
+- When creating a job file, the parameters are saved as an object.
 
 
 ### Other

@@ -9,9 +9,11 @@ The ClamShack and the ClamShell together form a tool for running CLAMS applicati
 
 Assumptions:
 
-- Relatively small Shack sizes, no more than a thousand assets. Also, once a Shack is initialized with a set of assets you cannot add or remove assets later. 
+- Relatively small Shack sizes, no more than a thousand assets.
+- Once a Shack is initialized with a set of assets you cannot add or remove assets later.
 - There is some way to get the type (video or text) from the assets path.
-- Assets have unique identifiers. The only exception are when there is the same identifier for a video asset and a text asset, which are then assumed to be different modalities of the same asset.
+- When running a job, existing files in the storage will never be overwritten. However, you should be able to explicitly remove all results from a job (which would also remove any downstream results).
+- Assets have unique identifiers. The only exception is when there is the same identifier for a video asset and a text asset, which are then assumed to be different modalities of the same asset.
 - MMIF files always end with `.mmif`.
 - All asset and MMIF file management happens through the Shack.
 - All assets are available on a local or mounted disk.
@@ -22,6 +24,12 @@ The names used to be CLAMS Shack and CLAMS Shell, but that felt clunky with the 
 
 
 ### Running the Shack and the Shell
+
+This requires Python 3.12 or later and the modules named in the requirements file. Install the dependencies as follows (you may want to do this in a virtual environment):
+
+```bash
+pip install -r requirements.txt
+```
 
 To create a shack:
 
@@ -37,12 +45,20 @@ To open an already existing Shack:
 python -m api.cli --shack <DIRECTORY>
 ```
 
-After either command you end up in the ClamShell REPL where you have access to a bunch of commands as well as to the `shack` variable, which contains the Python ClamShack object. Type "help" or "?" to get a list of available commands and type "help COMMAND" or "? COMMAND" to get command-specific help.
+After either command you end up in the ClamShell terminal where you have access to a bunch of commands as well as to the `shack` variable, which contains the Python ClamShack object. Type "help" or "?" to get a list of available commands and type "help COMMAND" or "? COMMAND" to get command-specific help.
+
+The prompt in the terminal is a shell symbol followed by the name of the Shack:
+
+```bash
+🐚 (shack-name)
+```
+
+> Unfortunately the shell symbol is not quite a clam shell, that symbol did not appear to be available as a unicode character.
 
 
 ## 2. Assets
 
-Every ClamShack is associated with an assets list, this association can be made only once, once you have specified a set of assets you cannot change them anymore, you would have to create a new Shack if you want to do that.
+Every ClamShack is associated with an assets list, this association can be made only once when you create a new shack. Once you have specified a set of assets you cannot change them anymore, you would have to create a new Shack if you want to do that.
 
 > This may be changed at some point and we may allow extra assets to be added later. For now we like how this makes sure you always now that each job that was run for this Shack has always applied to the same assets. It constrains what you can do and hence cuts down on a lot of potentially confusing extra functionality.
 
@@ -118,13 +134,13 @@ Next up is to make sure that apps are registered from available Docker container
 As mentioned above, running containers are needed for the Shack. Here is as an example how to run the spaCy container. First get the image:
 
 ```bash
-docker pull ghcr.io/clamsproject/app-spacy-wrapper:v2.1
+docker pull ghcr.io/clamsproject/app-spacy-wrapper:v2.2
 ```
 
 As usual the tricky part is to mount the container correctly so it can find the assets. We mount the `/data` directory on the container to the local directory where the assets live, using the asset list example from above:
 
 ```bash
-docker run --rm -d -p 5001:5000 -v /Users/Shared/aapb/assets:/data --name spacy ghcr.io/clamsproject/app-spacy-wrapper:v2.1
+docker run --rm -d -p 5001:5000 -v /Users/Shared/aapb/assets:/data --name spacy ghcr.io/clamsproject/app-spacy-wrapper:v2.2
 ```
 
 Basically, the `/data` directory maps to the highest path that governs all assets. 
@@ -144,7 +160,7 @@ This example above assumes that there is a `test` directory with a ClamShack in 
 From the Shack you can now register the app:
 
 ```
-ClamShell test> register http://127.0.0.1:5001
+🐚 (test) register http://127.0.0.1:5001
 Registered http://apps.clams.ai/spacy-wrapper/v2.1
 ```
 
@@ -162,13 +178,13 @@ Instead of using a full URL like `http://127.0.0.1:5001` you can also use `127.0
 This is simple now that we only do a one-app pipeline, simply select the one registered application:
 
 ```
-ClamShell test> apps
+🐚 (test) apps
 ╭─────────────────────────────────────────────────────────────────────────────────╮
 │ Registered CLAMS Apps                                                           │
 ╰─────────────────────────────────────────────────────────────────────────────────╯
  0: http://apps.clams.ai/spacy-wrapper/v2.1
 
-ClamShell test> apps 0
+🐚 (test) apps 0
 Selected http://apps.clams.ai/spacy-wrapper/v2.1
 ```
 
@@ -177,17 +193,17 @@ The first commands list the registered apps and the second selects one using the
 
 ### Step 4: Set parameters
 
-In case the app defaults are not appropriate you can set parameters one by one with the `params <param> <value>` command.
+In case the app defaults are not appropriate you can set parameters one by one with the `params <param>=<value>` command.
 
 ```
-ClamShell test> params pretty True
+🐚 (test) params pretty=True
 {'pretty': 'True'}
 
-ClamShell test> params threshold 3
+🐚 (test) params threshold=3
 {'pretty': 'True', 'threshold': '3'}
 ```
 
-Use `params reset` to reset the parameters to an empty dictionary. This breaks down when you have too many parameters or when parameters are verbose. For those cases you can create a JSON file with parameters, put it in the Shack and then load them. For example, suppose we have a file named params.json with the following content:
+The parameter name should not have an equal sign in it and parameters and values should not have whitespace in them. Use `params reset` to reset the parameters to an empty dictionary. Setting parameters by hand breaks down when you have too many parameters or when parameters are too verbose. For those cases you can create a JSON file with parameters, put it in the Shack and then load them. For example, suppose we have a file named params.json with the following content:
 
 ```json
 {
@@ -198,12 +214,14 @@ Use `params reset` to reset the parameters to an empty dictionary. This breaks d
 }
 ```
 
-You then load the file to set the parameters:
+You then load the file to set the parameters (note the @ symbol before the file name):
 
 ```
-ClamShell test> params params.json
+🐚 (test) params @params.json
 {'pretty': True, 'logging': 'on', 'threshold': 3, 'choices': ['yes', 'no', 'maybe']}
 ```
+
+Loading parameters from a file will start from a clean slate, that is, previously set parameters will be removed. However, after loading parameters from a file subsequently setting additonal parameters manually will not remove existing parameters and manually changing a parameter will only effect that parameter.
 
 
 ### Step 5: Input selection
@@ -220,8 +238,9 @@ Select the input by navigating through the Shack's MMIF storage, which is kept i
 
 ### Step 6: Run the job
 
-We now have registered and selected an app, set the parameters and selected the input. At this point we can run a job.
-For this, use the `run <jobname>` command, which spins off a separate process and control will immediately return to the ClamShell. You can see the status of all jobs with `jobs` and the particulars of a job with `jobs <jobname>`.
+We now have registered and selected an app, set the parameters and selected the input. At this point we can run a job. For this, use the `run <jobname>` command, which spins off a separate process and control will immediately return to the ClamShell. You can see the status of all jobs with `jobs` and the particulars of a job with `jobs <jobname>`. After a job is completed it is a good idea to run the `index` command which will update the search index of the MMIF storage.
+
+> That index will be created each time you start a shell, but won't be updated after a job finishes. There is currently no easy way to change the code so the re-indexing is done automatically, but in the future the index may be put in a database.
 
 > At the moment, jobs run only one CLAMS application on the input data. It might seem appealing to start one job on the MMIF sources and then a follow-up job on the output, but this is not a good idea because the follow-up job will not wait for files to be available. Multi-app jobs are on the whish list.
 
@@ -234,7 +253,7 @@ For this, use the `run <jobname>` command, which spins off a separate process an
 To get the current state of the Shack can use the `show` command. Below is an example of the output for a Shack with short fragments from a few files of the AAPB collections:
 
 ```
-ClamShell aapb-public-fragments> show
+🐚 (aapb-public-fragments) show
 ╭────────────────────────────────────────────────────────────────────────╮
 │ Shack settings and information                                         │
 ╰────────────────────────────────────────────────────────────────────────╯
@@ -270,9 +289,20 @@ So in the example above, one thing we see is that version v2.2 of the spacy tool
 
 ### Inspecting files
 
-If the `files` command returns a list of MMIF files than you can get a description of the MMIF file with `describe <int>`, where `<int>` is the index in the list.
+If the `files` command returns a list of MMIF files than you can get a description of the MMIF file with `describe <int>`, where `<int>` is the index of the file in the list.
 
 You can also type invoke `tree -p` to get the app parameters used to generate those files, that command will of course also print the tree.
+
+
+### Inspecting the selected CLAMS app
+
+You can view the metadata of a selected app by peeking into the ClamShack object in `shack`:
+
+```
+🐚 (aapb-public-fragments) shack.app.metadata()
+```
+
+If you have some familiarity with Python and the ClamShack code you can also access other instance variables on the shack, use `shack.__dir__()` to see what is available.
 
 
 ### Searching
@@ -280,7 +310,7 @@ You can also type invoke `tree -p` to get the app parameters used to generate th
 Taking up again the previous shack example, here is a command that finds directories with processing results for assets with identifiers that match a term:
 
 ```
-ClamShell aapb-public-fragments> search mmif f5
+🐚 (aapb-public-fragments) search mmif f5
 ╭───────────────────────────────────────────────────────────────────────────────────────────╮
 │ MMIF files matching "f5" and the directories where they occur                             │
 ╰───────────────────────────────────────────────────────────────────────────────────────────╯
@@ -297,14 +327,22 @@ ClamShell aapb-public-fragments> search mmif f5
      swt-detection/v8.6/d41d8cd9/smolvlm2-captioner/v1.0/d41d8cd9/spacy-wrapper/v2.2/aba40173/
 ``` 
 
-For readability purposes only the first 8 of the 32 characters in the hash value are displayed. You can also search for MMIF sources and directories created by a particular app, use `help search` to see what options there are.
+For readability purposes only the first 8 of the 32 characters in the hash value are displayed. You can also search for MMIF sources, directories created by a particular app, and directories create by apps with particular parameter settings. Here are some examples:
+
+```
+🐚 (aapb-public-fragments) search assets f5 
+🐚 (aapb-public-fragments) search app spacy
+🐚 (aapb-public-fragments) search params pretty=True threshold=3
+```
+
+For the `params` option, you can only search for atomic values.
 
 
-### Using scripts
+### History and using scripts
 
-There is a `history` command that writes all commands used in the shell since it was started to a file `history.txt`. 
+There is a `history` command that shows all commands used in the shell since the ClamShack was created, and a `history reset` command that resets the history.
 
-There is also a `script <script_file>` command that takes a file with the same syntax as the history file and then executes all commands in it. For example, assume you have a file named `example-script.txt` with the following content:
+There is also a `source <script_file>` command that takes a file with the same syntax as the history file and then executes all commands in it. For example, assume you have a file named `example-script.txt` with the following content:
 
 ```
 cd 0
@@ -317,9 +355,18 @@ show
 If this file is in the directory from where you started the shack, then you can run the following and all commands in the script will be executed:
 
 ```
-ClamShell test> script example-script.txt
+🐚 (aapb-public-fragments) script example-script.txt
 ```
 
-This is meant to help set up jobs, which can become tedious especially when you have a bunch of jobs that are quite similar and just differ in what parameters are set or what the input is.
+This is meant to help set up jobs, which can be a tedious task especially when you have a bunch of jobs that are quite similar and just differ in what parameters are set or what the input is.
+
+Empty lines and lines starting with a `#` are ignored.
 
 > These scripts are not saved in the shack. In a future version there may be some utilities to manage scripts.
+
+
+### Errors and logs
+
+Under the hood, the ClamShell and the ClamShack keep some logs and store errors. When you get a warning that an unexpected error occured you can use "show error" to see the error or "show errors" for all errors that occurred during a session.
+
+This kind of error is the kind of error that you may want to report. In your shack there are two files `.errors` and `.history` that would be very helpfull for debugging. 
