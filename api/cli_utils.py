@@ -134,6 +134,16 @@ COMMANDS = {
 
 class Job:
 
+    # TODO: 
+    # - a job should know what directory it is writing too
+    #   (you can use the new peek functionality for that)
+    # - add a variable named status with the following possible values:
+    #   running, aborted, failed, finished and maybe some more
+    #   (for running to check whether there is a process id that seems to 
+    #   be a clamshell job, if not you have failed, aborted is for when the
+    #   user aborts the job; i fpossible update the finished value)
+    # - allow deleting a job (with option to remove associated files?)
+
     def __init__(self, path: pathlib.Path):
         self.name = path.stem
         self.path = path
@@ -163,10 +173,12 @@ class Job:
     def __str__(self):
         return f'<Job {self.name} app={self.app}>'
 
-    def time_elapsed(self) -> str:
+    def time_elapsed(self) -> int:
+        """Return time elapsed in seconds. if the job is still running then we take
+        the total time since the job was started"""
         if self.finished is None:
-            return 'in-progress'
-        return str(int((self.finished - self.started).total_seconds())) + ' seconds'
+            return int(((datetime.now() - self.started).total_seconds()))
+        return int((self.finished - self.started).total_seconds())
 
     def info(self) -> Table:
         table = Table('property', 'value', box=box.ROUNDED)
@@ -175,7 +187,7 @@ class Job:
         table.add_row('pid', self.pid)
         table.add_row('guids', str(len(self.guids)))
         table.add_row('started', str(self.started))
-        table.add_row('time elapsed', self.time_elapsed())
+        table.add_row('time elapsed', str(self.time_elapsed()))
         return table
 
     def info_guids(self) -> Table:

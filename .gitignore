@@ -5,7 +5,9 @@
 
 api/database.*
 multi-guid-response*
+storage-response*
 examples/*
+example-*.*
 out*
 log*
 tmp*

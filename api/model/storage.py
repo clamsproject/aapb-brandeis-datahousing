@@ -1,11 +1,15 @@
-import io
 import os
 import json
 import zipfile
+from io import BytesIO
 from pathlib import Path
+from typing import Union
+
+from flask import jsonify
 
 from clams_utils.aapb import guidhandler
 from mmif import Mmif
+from mmif.utils.workflow_helper import generate_param_hash
 from mmif.utils.workflow_helper import generate_workflow_identifier
 
 from api import STORAGE_DIR
@@ -62,6 +66,11 @@ def get_guid(mmif: Mmif):
     return guid
 
 
+def get_files_at_workflow(workflow_path: Union[str, Path]) -> list:
+    """Return the list of MMIF files at the workflow path."""
+    return [p.stem for p in Path(workflow_path).glob('*.mmif')]
+
+
 def write_parameters(root: str, wfid: str, param_dicts: list):
     """Write json parameter files for each step in the workflow."""
     path_name = None
@@ -74,31 +83,33 @@ def write_parameters(root: str, wfid: str, param_dicts: list):
         param_hash = segments[i + 2]
         root = root / Path(appn) / appv / param_hash
         root.mkdir(parents=True, exist_ok=True)
+        # TODO. This now overwrites an already existing parameter file, add some
+        # kind of check here to catch weird cases? Maybe do not overwrite but warn
+        # if contents are different.
         with open(root.with_suffix('.json'), 'w') as f:
             json.dump(param_dicts[i // 3], f, indent=2)
 
 
-def get_mmif_for_guid(workflow_id: str, guid: str, num_views: int):
+def get_mmif_for_guid(workflow_id: str, identifier: str, num_views: int):
     """
-    Retrieve the MMIF file for a workflow and GUID. If none was found raise a
-    StorageServerError.
+    Retrieve the MMIF file for a workflow and an identifier. If none was found
+    raise a StorageServerError.
     """
-    guid = guid + ".mmif"
-    path = os.path.join(workflow_id, guid)
-    # if filepath exists, we can return it
+    fname = identifier + ".mmif"
+    path = os.path.join(workflow_id, fname)
+    # If the filepath exists, we return the content
     try:
         with open(path, 'r') as file:
-            mmif = json.loads(file.read())
-        return mmif
-    # otherwise we will use the rewinder to check if the user provided a prefix of a
-    # mmif workflow that we have previously stored
+            return json.loads(file.read())
+    # Otherwise we use the rewinder to check if the user provided a prefix of a
+    # mmif workflow that we have previously stored.
     except FileNotFoundError:
         try:
-            return rewind_time(workflow_id, guid, num_views)
+            return rewind_time(workflow_id, fname, num_views)
         except FileNotFoundError:
-            # the rewinder does not always succeed so we catch this exception again
-            # and raise an application-specific exception
-            raise StorageServerError(f'Did not find: {guid.split(".")[0]}')
+            # The rewinder does not always succeed so we catch this exception
+            # again and raise an application-specific exception.
+            raise StorageServerError(f'Did not find: {fname.split(".")[0]}')
 
 
 def rewind_time(workflow_id, guid, num_views):
@@ -117,28 +128,54 @@ def rewind_time(workflow_id, guid, num_views):
                     mmif = Mmif(f.read())
                     # we need to calculate the number of views to rewind
                     rewound = utils.rewind.rewind_mmif(mmif, len(mmif.views) - num_views)
-                return rewound.serialize()
+                    return rewound.serialize()
     raise FileNotFoundError
 
 
-def create_zipfile(workflow_id: str, guids: list):
+def create_zipfile(workflow_id: str, guids: list) -> BytesIO:
     """
-    When retrieving multiple MMIFs for a workflow, we construct a json object to
-    store each guid as a key and each MMIF as the value.
+    When retrieving multiple MMIFs for a workflow, we construct a zip file that
+    contains a file for each guid.
     """
     errors = dict()
-    mem_file = io.BytesIO()
+    mem_file = BytesIO()
     with zipfile.ZipFile(mem_file, 'w', zipfile.ZIP_DEFLATED) as mmif_zip:
         for guid in guids:
             try:
                 mmif_name = guid + ".mmif"
                 path = os.path.join(workflow_id, mmif_name)
-                mmif_zip.write(filename=path, arcname=f'multi-guid-response/files/{mmif_name}')
+                mmif_zip.write(filename=path, arcname=f'storage-response/files/{mmif_name}')
             except FileNotFoundError:
                 errors[guid] = {"Error": f"Did not find {guid}"}
-        mmif_zip.writestr(zinfo_or_arcname="multi-guid-response/workflow_path.txt", data=workflow_id)
+        mmif_zip.writestr(zinfo_or_arcname="storage-response/workflow_path.txt", data=workflow_id)
         error_dump = json.dumps(errors, indent=2)
-        mmif_zip.writestr(zinfo_or_arcname="multi-guid-response/errors.json", data=error_dump)
+        mmif_zip.writestr(zinfo_or_arcname="storage-response/errors.json", data=error_dump)
     mem_file.seek(0)
     return mem_file
 
+
+def generate_workflow_identifier_from_workflow_data(data: dict) -> str:
+    """
+    Build the relative workflow storage path from the request's JSON data. For
+    example, with input like
+
+        {"workflow": {"swt-detection/v2.0": {"pretty": "True"}}}
+
+    this function should return
+
+        "swt-detection/v2.0/5fe49d06725497b274b6eaaf0fe0c5d2"
+
+    This is similar to generate_workflow_identifier in mmif.utils.workflow_helper,
+    but the latter takes full MMIF input. We should probably merge this into the 
+    workflow_helper module.
+    """
+    wfid_segments = []
+    for clams_app, params in data.items():
+        try:
+            param_hash = generate_param_hash(params)
+        except AttributeError:
+            # in case the parameters input is not a proper dictionary
+            param_hash = generate_param_hash({})
+        wfid_segments.extend([clams_app, param_hash])
+    wfid = '/'.join(wfid_segments)
+    return wfid

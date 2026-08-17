@@ -823,10 +823,11 @@ class Shell(Cmd):
             console.print(Panel(
                 'Jobs associated with this Shack'
                 ' (listed in order of when they were started)'))
-            table = Table('name', 'app', 'guids', 'time', box=box.ROUNDED)
+            table = Table('name', 'app', 'guids', 'status', 'time (s)', box=box.ROUNDED)
             for job in sorted(self.shack.jobs.values(), key=lambda x: x.started, reverse=False):
-                elapsed = job.time_elapsed()
-                table.add_row(job.name, job.app, str(len(job.guids)), elapsed)
+                status = 'done' if job.finished else 'running'
+                elapsed = str(job.time_elapsed())
+                table.add_row(job.name, job.app, str(len(job.guids)), status, elapsed)
             console.print(table)
 
     def do_params(self, arg):
@@ -1089,7 +1090,7 @@ class Shell(Cmd):
         self.cmdqueue.append('apps')
 
     def do_z(self, arg):
-        #self.cmdqueue.append('ddirs')
+        #self.cmdqueue.append('dirs -d')
         #self.cmdqueue.append('cd swt-detection/v8.6/d41d8cd98f00b204e9800998ecf8427e/smolvlm2-captioner/v1.0/d41d8cd98f00b204e9800998ecf8427e')
         self.cmdqueue.append('source s.txt')
         #self.cmdqueue.append('run t1')
