@@ -80,12 +80,10 @@ COMMANDS = {
         'Print the current path in the MMIF storage.'),
 
     'dirs': (
-        'dirs\n dirs saved',
-        'Print the directories at the current path or print the last directories saved.'),
-
-    'ddirs': (
-        'ddirs',
-        'Print the directory paths at the current path, printing three levels down the tree.'),
+        'dirs [-d] [-s]',
+        'Print the directories at the current path. With the -d option three levels'
+        ' in the directory strructure are printed. With the -s option perviously'
+        ' saved directories are printed.'),
 
     'files': (
         'files',

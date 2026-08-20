@@ -503,27 +503,31 @@ class MmifIndex:
 
     def dequeue(self):
         """Check whether there is a queue (tested by checking the file size). If
-        there is upate the index and rest the queue."""
+        there is reset the queue and upate the index."""
         filesize = self.shack.queue_file.stat().st_size
         if filesize > 0:
-            content = self.shack.queue_file.read_text()
-            for line in content.split('\n'):
-                if not line:
-                    continue
-                p = Path(line)
-                d1 = p.parent
-                d2 = d1.parent
-                d3 = d2.parent
-                guid = p.stem
-                for d in (d1, d2, d3):
-                    if d not in self.dirs:
-                        #print(f'adding {path_as_string(d)}')
-                        self.dirs.add(d)
-                self.data.setdefault(guid, [])
-                if d1 not in self.data[guid]:
-                    self.data.setdefault(guid, []).append(d1)
-                    #print(f'adding {guid}\n       {path_as_string(d1)}')
             self.shack.queue_file.write_text('')
+            self.shack.reindex()
+        # Note: this was a more complicated and potentially more efficient way of
+        # doing it but it was not quite right, perhaps revisit
+        #     content = self.shack.queue_file.read_text()
+        #     for line in content.split('\n'):
+        #         if not line:
+        #             continue
+        #         p = Path(line)
+        #         d1 = p.parent
+        #         d2 = d1.parent
+        #         d3 = d2.parent
+        #         guid = p.stem
+        #         for d in (d1, d2, d3):
+        #             if d not in self.dirs:
+        #                 #print(f'adding {path_as_string(d)}')
+        #                 self.dirs.add(d)
+        #         self.data.setdefault(guid, [])
+        #         if d1 not in self.data[guid]:
+        #             self.data.setdefault(guid, []).append(d1)
+        #             #print(f'adding {guid}\n       {path_as_string(d1)}')
+        #     self.shack.queue_file.write_text('')
 
     def search_assets(self, term: str) -> list:
         """Return a list of assets whose identifiers contain the term."""
@@ -908,28 +912,27 @@ class Shell(Cmd):
             print('', path_as_string(path))
 
     def do_dirs(self, arg):
-        if arg == 'saved':
+        if arg == '-s':
             if self.saved_directories:
                 console.print(Panel(f'Last directories saved (using full storage path)'))
                 for n, path in self.saved_directories.items():
                     print(f' {n:2d}: {path_as_string(path)}')
             else:
                 print('\n No directories were saved.')
+        elif arg == '-d':
+            spath = StoragePath(self.shack, self.shack.path)
+            dirs = spath.ddir()
+            p = path_as_string(self.shack.cwd())
+            console.print(Panel(f'Expanded sub directories at "{p}"'))
+            self.saved_directories = {}
+            for n, (d1, d2) in enumerate(dirs):
+                self.saved_directories[n] = d1
+                print(f' {n:2d}: {path_as_string(d2)}')
         else:
             p = path_as_string(self.shack.cwd())
             console.print(Panel(f'Sub directories at "{p}"'))
             for n, d in enumerate(self.shack.subdirs()):
                 print(f' {n:2d}: {str(d)}')
-
-    def do_ddirs(self, arg):
-        spath = StoragePath(self.shack, self.shack.path)
-        dirs = spath.ddir()
-        p = path_as_string(self.shack.cwd())
-        console.print(Panel(f'Expanded sub directories at "{p}"'))
-        self.saved_directories = {}
-        for n, (d1, d2) in enumerate(dirs):
-            self.saved_directories[n] = d1
-            print(f' {n:2d}: {path_as_string(d2)}')
 
     def do_files(self, arg):
         console.print(Panel(f'MMIF files at "{path_as_string(self.shack.cwd())}"'))
