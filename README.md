@@ -105,6 +105,15 @@ curl -X POST 127.0.0.1:8001/api/mmif/download \
 }
 ```
 
+Instead of a workflow description you can also use a workflow identifier:
+
+```bash
+curl -X POST 127.0.0.1:8001/api/mmif/download \
+    -H 'Content-Type: "application/json"' \
+    -d '{"guid": "cpb-aacip-4071f72dd46-clip1",
+         "workflow_id": "swt-detection/v8.6/d41d8cd98f00b204e9800998ecf8427e"}'
+```
+
 With a list of identifiers (including just one identifier), the server will return a ZIP file. The `--output` ZIP file name must be specified in the request to the server.
 
 ```bash
@@ -116,6 +125,8 @@ curl -X POST 127.0.0.1:8001/api/mmif/download \
 ```
 
 The zipfile returned has the MMIF files for each GUID, in addition it has an error log with notifications on which files could not be retrieved and a file with the workflow path from the server.
+
+As with the single identifier, you can use a workflow identifier instead of a workflow description.
 
 
 **MMIF storage analytics**
