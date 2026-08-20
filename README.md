@@ -1,6 +1,6 @@
 # AAPB-Brandeis datahousing server
 
-Codebase for the datahousing server deployed on the Brandeis-LLC site as a part of the [CLAMS Project](https://www.clams.ai). 
+Codebase for the datahousing server deployed on the Brandeis-LLC site as a part of the [CLAMS Project](https://www.clams.ai).
 
 At the moment, the server is used to resolve AAPB GUIDs to local file paths, and works with the accompanying client, [`mmif-docloc-baapb`](https://github.com/clamsproject/mmif-docloc-baapb) MMIF plugin.
 
@@ -23,20 +23,20 @@ There are API routes for (1) searching the assets (typically videos, audio strea
 
 **Searching assets**
 
-To query available assets use the `searchapi` route with these three query string parameters:
+To query available assets use the `api/assets/search` or `searchapi` route with these three query string parameters:
 
 * `guid` — part of the AAPB GUID to search for (min. 3 characters), required parameter
 * `file` — the type of the file to search for: any number of `text`, `image`, `audio`, `video`, `markup` and `other`, default is to search for all types
 * `onlyfirst` — when used only the first match will be returned, default is false
 
-Examples for a local install (the port numbers may differ depending on how you have deployed your server, see below):
+Examples for a local install (the host name and port numbers may differ depending on how you deployed your server, see below):
 
 ```
-curl '127.0.0.1:8001/searchapi?guid=zw18'
-curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h'
-curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video'
-curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video&file=other'
-curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&onlyfirst=true'
+curl '127.0.0.1:8001/api/assets/search?guid=zw18'
+curl '127.0.0.1:8001/api/assets/search?guid=507-zw18k75z4h'
+curl '127.0.0.1:8001/api/assets/search?guid=507-zw18k75z4h&file=video'
+curl '127.0.0.1:8001/api/assets/search?guid=507-zw18k75z4h&file=video&file=other'
+curl '127.0.0.1:8001/api/assets/search?guid=507-zw18k75z4h&onlyfirst=true'
 ```
 
 These return a message if no file was found, a list of server paths or a single path (if onlyfirst was used). Note that searches for short strings that occur in many GUIDs may take a few seconds.
@@ -44,24 +44,24 @@ These return a message if no file was found, a list of server paths or a single 
 
 **Uploading MMIF files**
 
-For this you use the `storeapi/upload` route:
+For this you use the `api/mmif/upload` or `storeapi/upload` route:
 
 ```
-curl -X POST 127.0.0.1:8001/storeapi/upload -d @<some_mmif_file>
-curl -X POST 127.0.0.1:8001/storeapi/upload?overwrite=True -d @<some_mmif_file>
+curl -X POST 127.0.0.1:8001/api/mmif/upload -d @<some_mmif_file>
+curl -X POST 127.0.0.1:8001/api/mmif/upload?overwrite=True -d @<some_mmif_file>
 ```
 
 In the first case you get a warning if a file was already uploaded, in the second case existing files will be overwritten.
 
 
-**Downloading MMIF files**
+**Peeking into a workflow directory**
 
-This uses the `storeapi/download` route. There are three modes. In the zero-GUID mode you just hand in a workflow specification and the server returns the server path and all files at that path:
+This uses the `api/mmif/peek` or the `storeapi/peek` route which takes a workflow specification and returns the server path and all files at that path:
 
 ```bash
-curl -X POST 127.0.0.1:8001/storeapi/download \
+curl -X POST 127.0.0.1:5000/api/mmif/peek \
     -H 'Content-Type: "application/json"' \
-    -d '{"workflow": {"swt-detection/v2.0-38-g7838415": {"pretty": "True"}}}'
+    -d '{"workflow": {"swt-detection/v8.6": {"pretty": "True"}}}'
 ```
 ```json
 {
@@ -72,51 +72,69 @@ curl -X POST 127.0.0.1:8001/storeapi/download \
     "cpb-aacip-516-8c9r20sq57",
     "cpb-aacip-259-5717pw8g"
   ],
-  "workflow": "/Users/Shared/aapb/storage-test/swt-detection/v2.0-38-g7838415/5fe49d06725497b274b6eaaf0fe0c5d2"
+  "workflow_id": "swt-detection/v8.6/5fe49d06725497b274b6eaaf0fe0c5d2"
 }
 ```
 
-If the pipeline path did not exist on the server, the response will still include a file path, but the list of files will be empty.
-
-For the single-guid mode you add a guid and the server will return a MMIF file or a warning if the file did not exist:
+The workflow can have more than one application:
 
 ```bash
-curl -X POST 127.0.0.1:8001/storeapi/download \
+curl -X POST 127.0.0.1:5000/api/mmif/peek \
     -H 'Content-Type: "application/json"' \
-    -d '
-    {
-        "workflow": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },
-        "guid": "NON-EXISTING GUID"
-    }'
+    -d '{"swt-detection/v8.6": {}, "smolvlm2-captioner/v1.0": {}}'
+```
+
+If the pipeline path did not exist on the server, the response will still include a workflow path, but the list of files will be empty.
+
+
+**Downloading MMIF files**
+
+This uses the `api/mmif/download` or `storeapi/download` route. There are two modes: single identifier and list of identifiers. 
+
+The one-identifier mode takes a workflow specification and an identifier, and the server will return a MMIF file or a warning if the file did not exist:
+
+```bash
+curl -X POST 127.0.0.1:8001/api/mmif/download \
+    -H 'Content-Type: "application/json"' \
+    -d '{"workflow": { "swt-detection/v8.6": {"pretty": "True"} },
+         "guid": "non-existing-identifier"}'
 ```
 ```json
 {
-  "error": "Did not find: NON-EXISTING GUID"
+  "error": "Did not find: non-existing-identifier"
 }
 ```
 
-With a list of GUIDs, the server will return a ZIP file. The `--output` ZIP file name must be specified in the request to the server.
+Instead of a workflow description you can also use a workflow identifier:
 
 ```bash
-curl -X POST 127.0.0.1:8001/storeapi/download \
+curl -X POST 127.0.0.1:8001/api/mmif/download \
+    -H 'Content-Type: "application/json"' \
+    -d '{"guid": "cpb-aacip-4071f72dd46-clip1",
+         "workflow_id": "swt-detection/v8.6/d41d8cd98f00b204e9800998ecf8427e"}'
+```
+
+With a list of identifiers (including just one identifier), the server will return a ZIP file. The `--output` ZIP file name must be specified in the request to the server.
+
+```bash
+curl -X POST 127.0.0.1:8001/api/mmif/download \
     -H 'Content-Type: "application/zip"' \
-    -d '
-    {
-        "workflow": { "whisper-wrapper/v3": {"modelSize": "tiny"} },
-        "guid": ["cpb-aacip-507-154dn40c26", "cpb-aacip-507-v40js9j432", "NO-SUCH-GUID"]
-    }' \
-    --output mmif_zip.zip
+    --output mmif_zip.zip \
+    -d '{"workflow": { "whisper-wrapper/v3": {"modelSize": "tiny"} },
+         "guid": ["cpb-aacip-507-154dn40c26", "no-such-id"]}'
 ```
 
 The zipfile returned has the MMIF files for each GUID, in addition it has an error log with notifications on which files could not be retrieved and a file with the workflow path from the server.
 
+As with the single identifier, you can use a workflow identifier instead of a workflow description.
+
 
 **MMIF storage analytics**
 
-To retrieve information on the status of data in the MMIF storage directory, use the `storeapi/status` route:
+To retrieve information on the status of data in the MMIF storage directory, use the `api/mmif/status` or `storeapi/status` route:
 
 ```bash
-curl -X GET 127.0.0.1:8001/storeapi/status
+curl -X GET 127.0.0.1:8001/api/mmif/status
 ```
 
 This returns a dictionary with information on the full workflow, e.g.:
@@ -168,6 +186,12 @@ This returns a dictionary with information on the full workflow, e.g.:
 }
 ```
 
+There is also a command to retrieve just the paths:
+
+```bash
+curl -X GET 127.0.0.1:8001/api/mmif/path
+```
+
 
 ### Storage Server Browser
 
@@ -176,7 +200,7 @@ Some of the functionality above is also available via the Storage Server Browser
 
 ## Deploy on your own
 
-Install all the python dependencies with `pip install -r requirements.txt`, and configure your server using a `.env` file or via environment variables (see `.env.sample` for an example configuration file). The following variables need to be defined:
+Install all Python dependencies with `pip install -r requirements.txt` and configure your server using a `.env` file or via environment variables (this is both for general Flask settings and application-specific settings, see `.env.sample` for an example configuration file). The following variables need to be defined:
 
 * `FLASK_APP`: must be `api`
 * `FLASK_DEBUG`: set to `1` to enable debug mode, otherwise `0`

@@ -4,11 +4,11 @@ Routes relevant to the assets repository.
 
 Examples:
 
-    curl '127.0.0.1:8001/searchapi?guid=zw18'
-    curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h'
-    curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video'
-    curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video&file=other'
-    curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&onlyfirst=true'
+    curl '127.0.0.1:8001/api/assets/search?guid=zw18'
+    curl '127.0.0.1:8001/api/assets/search?guid=507-zw18k75z4h'
+    curl '127.0.0.1:8001/api/assets/search?guid=507-zw18k75z4h&file=video'
+    curl '127.0.0.1:8001/api/assets/search?guid=507-zw18k75z4h&file=video&file=other'
+    curl '127.0.0.1:8001/api/assets/search?guid=507-zw18k75z4h&onlyfirst=true'
 
 """
 
