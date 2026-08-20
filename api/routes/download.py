@@ -51,6 +51,22 @@ curl -X POST 127.0.0.1:8001/api/mmif/download \
     -d '{"guid": ["cpb-aacip-4071f72dd46-clip1", "cpb-aacip-c72fd5cbadc"],
          "workflow": {"swt-detection/v8.6": {}}}'
 
+# Using workflow identifiers. As an alternative we can use the workflow identifier,
+# this works whether the guid value is a string or a list.
+
+curl -X POST 127.0.0.1:8001/api/mmif/download \
+    -H 'Content-Type: "application/json"' \
+    -d '{"guid": "cpb-aacip-4071f72dd46-clip1",
+         "workflow_id": "swt-detection/v8.6/d41d8cd98f00b204e9800998ecf8427e"}'
+
+curl -X POST 127.0.0.1:8001/api/mmif/download \
+    -H 'Content-Type: "application/json"' \
+    --output tmp.zip \
+    -d '{"guid": ["cpb-aacip-4071f72dd46-clip1", "cpb-aacip-c72fd5cbadc"],
+         "workflow_id": "swt-detection/v8.6/d41d8cd98f00b204e9800998ecf8427e"}'
+
+
+
 """
 
 import json
@@ -74,11 +90,8 @@ bp = Blueprint('mmif_download', __name__)
 #print(f'{bp} import_name={bp.import_name} __name__={__name__}')
 
 
-API_PREFIX = '/storeapi'
-
-
 @bp.post('/api/mmif/peek')
-@bp.post(f"{API_PREFIX}/peek")
+@bp.post('/storeapi/peek')
 def peek():
     data = json.loads(request.data.decode('utf-8'))
     wfid = generate_workflow_identifier_from_workflow_data(data)
@@ -92,10 +105,14 @@ def peek():
 
 
 @bp.post('/api/mmif/download')
-@bp.post(f"{API_PREFIX}/download")
+@bp.post('/storeapi/download')
 def download_mmif():
     data = json.loads(request.data.decode('utf-8'))
-    wfid = generate_workflow_identifier_from_workflow_data(data['workflow'])
+    if 'workflow_id' in data:
+        # TODO: maybe add a check that the value is an existing workflow
+        wfid = data['workflow_id']
+    else:
+        wfid = generate_workflow_identifier_from_workflow_data(data['workflow'])
     # get number of views for rewind if necessary
     num_views = len(data.get('workflow', []))
     guid = data.get('guid')

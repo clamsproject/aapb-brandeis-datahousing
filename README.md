@@ -91,7 +91,7 @@ If the pipeline path did not exist on the server, the response will still includ
 
 This uses the `api/mmif/download` or `storeapi/download` route. There are two modes: single identifier and list of identifiers. 
 
-The one-identifier mode takes a workflow specification and an identifier and the server will return a MMIF file or a warning if the file did not exist:
+The one-identifier mode takes a workflow specification and an identifier, and the server will return a MMIF file or a warning if the file did not exist:
 
 ```bash
 curl -X POST 127.0.0.1:8001/api/mmif/download \
@@ -120,10 +120,10 @@ The zipfile returned has the MMIF files for each GUID, in addition it has an err
 
 **MMIF storage analytics**
 
-To retrieve information on the status of data in the MMIF storage directory, use the `api/status` or `storeapi/status` route:
+To retrieve information on the status of data in the MMIF storage directory, use the `api/mmif/status` or `storeapi/status` route:
 
 ```bash
-curl -X GET 127.0.0.1:8001/api/status
+curl -X GET 127.0.0.1:8001/api/mmif/status
 ```
 
 This returns a dictionary with information on the full workflow, e.g.:
@@ -173,6 +173,12 @@ This returns a dictionary with information on the full workflow, e.g.:
   "total_mmif_files": 3,
   "total_pipelines": 3
 }
+```
+
+There is also a command to retrieve just the paths:
+
+```bash
+curl -X GET 127.0.0.1:8001/api/mmif/path
 ```
 
 

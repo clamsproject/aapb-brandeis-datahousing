@@ -140,21 +140,30 @@ def create_zipfile(workflow_id: str, guids: list) -> BytesIO:
     errors = dict()
     mem_file = BytesIO()
     with zipfile.ZipFile(mem_file, 'w', zipfile.ZIP_DEFLATED) as mmif_zip:
+        statistics = { "number_of_files": 0, "total_size": 0, "file_names": []}
         for guid in guids:
             try:
                 mmif_name = guid + ".mmif"
                 path = os.path.join(workflow_id, mmif_name)
                 mmif_zip.write(filename=path, arcname=f'storage-response/files/{mmif_name}')
+                statistics["number_of_files"] += 1
+                statistics["total_size"] += Path(path).stat().st_size
+                statistics["file_names"].append(mmif_name)
             except FileNotFoundError:
                 errors[guid] = {"Error": f"Did not find {guid}"}
-        mmif_zip.writestr(zinfo_or_arcname="storage-response/workflow_path.txt", data=workflow_id)
-        error_dump = json.dumps(errors, indent=2)
-        mmif_zip.writestr(zinfo_or_arcname="storage-response/errors.json", data=error_dump)
+        error_json = json.dumps(errors, indent=2)
+        stats_json = json.dumps(statistics, indent=2)
+        mmif_zip.writestr(
+            zinfo_or_arcname="storage-response/workflow_path.txt", data=workflow_id)
+        mmif_zip.writestr(
+            zinfo_or_arcname="storage-response/errors.json", data=error_json)
+        mmif_zip.writestr(
+            zinfo_or_arcname="storage-response/stats.json", data=stats_json)
     mem_file.seek(0)
     return mem_file
 
 
-def generate_workflow_identifier_from_workflow_data(data: dict) -> str:
+def generate_workflow_identifier_from_workflow_data(data: dict | str) -> str:
     """
     Build the relative workflow storage path from the request's JSON data. For
     example, with input like

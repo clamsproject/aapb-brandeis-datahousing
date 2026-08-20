@@ -15,11 +15,8 @@ bp = Blueprint('mmif_upload', __name__)
 #print(f'{bp} import_name={bp.import_name} __name__={__name__}')
 
 
-API_PREFIX = '/storeapi'
-
-
-@bp.post(f"/api/mmif/upload")
-@bp.post(f"{API_PREFIX}/upload")
+@bp.post('/api/mmif/upload')
+@bp.post('/storeapi/upload')
 def upload():
     try:
         body = request.get_data(as_text=True)

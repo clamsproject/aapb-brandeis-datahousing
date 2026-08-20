@@ -77,14 +77,11 @@ from flask import request, Blueprint, Response, jsonify, current_app
 from api import utils
 
 
-API_PREFIX = '/experiments'
-
-
 bp = Blueprint('experiments', __name__)
 #print(f'{bp} import_name={bp.import_name} __name__={__name__}')
 
 
-@bp.get(f"{API_PREFIX}/stream")
+@bp.get('/experiments/stream')
 def stream():
     def generate():
         for i in range(10):
@@ -94,7 +91,7 @@ def stream():
 
 # To test a number of large files all handed over at the same time, prints the 
 # memory use of the results object.
-@bp.post(f"{API_PREFIX}/test1")
+@bp.post('/experiments/test1')
 def test1():
     t0 = time.time()
     data = json.loads(request.data.decode('utf-8'))
@@ -121,7 +118,7 @@ def test1():
 
 
 # To test a number of large files streamed one by one
-@bp.get(f"{API_PREFIX}/test2")
+@bp.get('/experiments/test2')
 def test2():
     def generate():
         for i in range(10):
