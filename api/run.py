@@ -54,7 +54,6 @@ class ClamsApp:
 def register_app(url: str):
     """Check the input url with a GET request to see if it is a CLAMS app, if
     so register the url in the APPS variable under the identifier of the app."""
-    # TODO: check whether the http:// part is there
     if not url.startswith('http://'):
         url = f'http://{url}'
     try:
