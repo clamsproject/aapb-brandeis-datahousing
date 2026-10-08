@@ -1,182 +1,101 @@
 # AAPB-Brandeis datahousing server
 
-Codebase for the datahousing server deployed on Brandeis-LLC site as a part of [CLAMS Project](https://www.clams.ai). 
+Codebase for the datahousing server deployed on the Brandeis-LLC site as a part of the [CLAMS Project](https://www.clams.ai).
 
-At the moment, the server is used to resolve AAPB GUIDs to local file paths, and works with the accompanying client, [`mmif-docloc-baapb`](https://github.com/clamsproject/mmif-docloc-baapb) MMIF plugin.
+The server resolves AAPB GUIDs to the local file paths of the matching assets (videos, audio streams, transcripts and other files). It works with the accompanying client, the [`mmif-docloc-baapb`](https://github.com/clamsproject/mmif-docloc-baapb) MMIF plugin.
+
+Storage of MMIF files is handled by [`mmif-storage`](https://github.com/clamsproject/mmif-storage) and [`mmif-storage-api`](https://github.com/clamsproject/mmif-storage-api).
 
 
-## Usage 
+## Usage
 
 ### Within CLAMS apps
 
-To use the data server from within a CLAMS app and resolve `baapb://` scheme URIs in MMIF document locations:
+To resolve `baapb://` URIs in MMIF document locations from within a CLAMS app:
 
-1. **Install the client plugin**: Add [`mmif-docloc-baapb`](https://github.com/clamsproject/mmif-docloc-baapb) to your app's dependencies. The plugin will automatically register with `mmif-python` (requires `mmif-python` >= 1.0.2).
+1. Add [`mmif-docloc-baapb`](https://github.com/clamsproject/mmif-docloc-baapb) to the dependencies of the app. The plugin registers itself with `mmif-python` (version 1.0.2 or later).
+1. Set the `BAAPB_RESOLVER_ADDRESS` environment variable to the deployment address of this server, including the port number (`hostname:port`). The address of the Brandeis deployment is stored as [an organization variable](https://github.com/organizations/clamsproject/settings/variables/actions).
 
-2. **Set the resolver address**: Set the `BAAPB_RESOLVER_ADDRESS` environment variable to the deployment address of this data server (including the port number). For example:
-   ```bash
-   export BAAPB_RESOLVER_ADDRESS="hostname:port"
-   ```
-
-3. **Use in your app**: Once configured, the plugin will automatically resolve `baapb://` URIs to local file paths when processing MMIF documents. For more information on MMIF plugins, see the [MMIF Python SDK documentation](https://clams.ai/mmif-python/latest/plugins.html) 
-
+The plugin then resolves `baapb://` URIs to local file paths when the app reads a MMIF document. For more information on MMIF plugins, see the [MMIF Python SDK documentation](https://clams.ai/mmif-python/latest/plugins.html).
 
 ### Server API
 
-There are API routes for (1) searching the assets (typically videos, audio streams and transcripts), (2) uploading MMIF files, (3) downloading MMIF files, and (4) retrieving MMIF storage analytics.
+To query available assets, use the `api/assets/search` route (also available as `searchapi`) with these query string parameters:
 
+* `guid`: part of the AAPB GUID to search for (minimum 3 characters), required
+* `file`: the type of the file to search for, any number of `text`, `image`, `audio`, `video`, `markup` and `other`; the default is all types
+* `onlyfirst`: when present, only the first match is returned
 
-**Searching assets**
-
-To query available assets use the `searchapi` route with these three query string parameters:
-
-* `guid` (required) — part of the AAPB GUID to search for (min. 3 characters)
-* `file` — the type of the file to search for: up to three of `text`, `image`, `audio`, `video`, `markup` and `other`
-* `onlyfirst` — when used only the first match will be returned, default is false
-
-Examples (these use URLs as if you have deployed your own server (see below)):
-
-```
-curl '127.0.0.1:8001/searchapi?guid=zw18'
-curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h'
-curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video'
-curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&file=video&file=other'
-curl '127.0.0.1:8001/searchapi?guid=507-zw18k75z4h&onlyfirst=true'
-```
-
-These return a message if no file was found, a list of server paths or a single path (if onlyfirst was used).
-
-
-**Uploading MMIF files**
-
-For this you use the `storeapi/upload` route:
-
-```
-curl -X POST 127.0.0.1:8001/storeapi/upload -d @<some_mmif_file>
-curl -X POST 127.0.0.1:8001/storeapi/upload?overwrite=True -d @<some_mmif_file>
-```
-
-In the first case you get a warning if a file was already uploaded, in the second case existing files will be overwritten.
-
-
-**Downloading MMIF files**
-
-This uses the `storeapi/download` route. There are three modes. In the zero-GUID mode you just hand in a workflow specification and the server returns the server path and all files at that path:
+Examples for a local install (the host name and port number depend on how you deployed the server, see below):
 
 ```bash
-curl -X POST 127.0.0.1:8001/storeapi/download \
-    -H 'Content-Type: "application/json"' \
-    -d '{"workflow": {"swt-detection/v2.0-38-g7838415": {"pretty": "True"}}}'
-```
-```json
-{
-  "filenames": [
-    "cpb-aacip-690722078b2"
-  ],
-  "workflow": "/Users/Shared/aapb/storage-test/swt-detection/v2.0-38-g7838415/5fe49d06725497b274b6eaaf0fe0c5d2"
-}
+curl '127.0.0.1:5000/api/assets/search?guid=zw18'
+curl '127.0.0.1:5000/api/assets/search?guid=507-zw18k75z4h'
+curl '127.0.0.1:5000/api/assets/search?guid=507-zw18k75z4h&file=video'
+curl '127.0.0.1:5000/api/assets/search?guid=507-zw18k75z4h&file=video&file=other'
+curl '127.0.0.1:5000/api/assets/search?guid=507-zw18k75z4h&onlyfirst=true'
 ```
 
-If you add a GUID, then the server will return a MMIF file or a warning if the file did not exist:
+The response is a JSON list of server paths, or a single path if `onlyfirst` was used. If no file matches, the server responds with status 404 and a message. Searches for short strings that occur in many GUIDs can take a few seconds.
 
-```bash
-curl -X POST 127.0.0.1:8001/storeapi/download
-    -H 'Content-Type: "application/json"'
-    -d '
-    {
-        "workflow": { "swt-detection/v2.0-38-g7838415": {"pretty": "True"} },
-        "guid": "NON-EXISTING GUID"
-    }'
-```
-```json
-{
-  "error": "Did not find: NON-EXISTING GUID"
-}
-```
+### Asset browser
 
-With a list of GUIDs, the server will return a ZIP file. The `--output` ZIP file name must be specified in the request to the server.
-
-```bash
-curl -X POST 127.0.0.1:8001/storeapi/download \
-    -H 'Content-Type: "application/zip"' \
-    -d '
-    {
-        "workflow": { "whisper-wrapper/v3": {"modelSize": "tiny"} },
-        "guid": ["cpb-aacip-507-154dn40c26", "cpb-aacip-507-v40js9j432", "NO-SUCH-GUID"]
-    }' \
-    --output mmif_zip.zip
-```
-
-The zipfile returned has the MMIF files for each GUID, in addition it has an error log with notifications on which files could not be retrieved and a file with the workflow path from the server.
+The same search is available in a web browser at the `/www/` path of the server, for example [http://localhost:5000/www/](http://localhost:5000/www/).
 
 
-**MMIF storage analytics**
+## Deploy on your own
 
-To retrieve information on the status of data in the MMIF storage directory, use the `storeapi/status` route:
-
-```angular2html
-curl -X GET 127.0.0.1:8001/storeapi/status
-```
-
-This returns a dictionary with information on the full workflow, e.g.:
-
-```json
-{
-  "dirty_pipeline_mmif_count": 0,
-  "non_terminal_mmif_count": 1,
-  "pipelines": [
-    {
-      "mmif_count": 1,
-      "path": "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe",
-      "spec": {
-        "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe": {
-          "pretty": "true",
-          "tfAllowOverlap": "false",
-          "tfLabelMap": "['I:chyron', 'Y:chyron', 'N:chyron']",
-          ...
-        }
-      }
-    },
-    {
-      "mmif_count": 1,
-      "path": "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe/tesseract/v2.0/e0ba0bab08a08fda1ed9f16d35bd21aa",
-      "spec": {
-        "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe": {
-          ...
-        },
-        "tesseract/v2.0/e0ba0bab08a08fda1ed9f16d35bd21aa": {
-          ...
-        }
-      }
-    },
-    {
-      "mmif_count": 1,
-      "path": "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe/doctr-wrapper/v1.4/e0ba0bab08a08fda1ed9f16d35bd21aa",
-      "spec": {
-        "doctr-wrapper/v1.4/e0ba0bab08a08fda1ed9f16d35bd21aa": {
-          ...
-        },
-        "swt-detection/v7.4/3fd99622c1a78613dc21c3dc4984e6fe": {
-          ...
-        }
-      }
-    }
-  ],
-  "total_mmif_files": 3,
-  "total_pipelines": 3
-}
-```
-
-
-### Deploy on your own
-
-Install all the python dependencies with `pip install -r requirements.txt`, and configure your server using `.env` file or via environment variables (See `.env.sample` file for an example).
+Install the Python dependencies with `pip install -r requirements.txt` and configure the server with a `.env` file or with environment variables (see `.env.sample` for an example). The following variables are used:
 
 * `FLASK_APP`: must be `api`
 * `FLASK_DEBUG`: set to `1` to enable debug mode, otherwise `0`
 * `FLASK_RUN_PORT`: port number to listen on
-* `FLASK_RUN_HOST`: hostname to listen
-* `ASSET_DIR`: path to the directory on the server where the AAPB media files (assets) are stored
-* `BUILD_DB`: set to `1` to build the database from scratch, otherwise `0`
+* `FLASK_RUN_HOST`: host name
+* `ASSET_DIR`: path to the directory on the server where the AAPB media files (assets) are stored, required
+* `BUILD_DB`: set to `1` to build the assets database from scratch at each start, otherwise `0` (the default)
 
-Start the server with `flask run`.
+The directory tree under `ASSET_DIR` can have any structure. The file type of an asset is taken from its file extension. Only files with a name that starts with `cpb` are indexed.
+
+Before you start the server for the first time, build the assets database:
+
+```bash
+flask create-db
+```
+
+To start the server:
+
+```bash
+flask run
+```
+
+### Using a container
+
+In a container the configuration in `.env` is likely to be more like the example in `.env.docker`.
+
+To build an image (change name and tag as needed):
+
+```bash
+docker build -t aapb-data:v1 -f Containerfile .
+```
+
+To run the container:
+
+```bash
+docker run --name aapb -d --rm -it -p 8080:8080 -v /Users/Shared/aapb:/data aapb-data:v1
+```
+
+This assumes that the assets live in the `assets` subdirectory of `/Users/Shared/aapb` on the host. The `-v` option mounts that directory on `/data` in the container, which matches `ASSET_DIR=/data/assets` in `.env.docker`. If you use another path for `ASSET_DIR`, adjust the mount accordingly.
+
+The server runs on [http://localhost:8080/www/](http://localhost:8080/www/).
+
+Because `BUILD_DB` is set to `1`, the API and the browser are not available until the database is created.
+
+### Production
+
+`app_production.py` is the entry point for a WSGI server such as gunicorn. It reads its configuration from a `.env.production` file next to it, builds the assets database once, and then creates the application:
+
+```bash
+gunicorn --bind 0.0.0.0:8080 --timeout 1200 app_production:app
+```
+
+`baapb-datahousing.container` is the [quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) unit used for the Brandeis deployment. It runs the command above in an image built from `Containerfile`.

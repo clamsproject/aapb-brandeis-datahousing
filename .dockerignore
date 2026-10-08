@@ -1,0 +1,13 @@
+.venv
+.git
+.github
+.pytest_cache
+uv.lock
+venv*
+__pycache__
+api/__pycache__
+api/*/__pycache__
+api/database.db
+docs
+examples
+tests
