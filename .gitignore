@@ -4,15 +4,11 @@
 ### aapb-brandeis-datahousing ###
 
 api/database.*
-multi-guid-response*
-storage-response*
 examples/*
 example-*.*
 out*
 log*
 tmp*
-shacks
-*.mmif
 .python-version
 backup.sh
 find.sh
@@ -149,6 +145,7 @@ web_modules/
 .env.development*
 .env.test*
 .env.local
+.env.production
 .env
 venv*
 

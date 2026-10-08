@@ -6,7 +6,6 @@ ENV PYTHONUNBUFFERED 1
 WORKDIR /app
 
 COPY ./requirements.txt /app/requirements.txt
-COPY ./packages/inspector_mv-0.0.3.tar.gz /app/packages/inspector_mv-0.0.3.tar.gz
 
 RUN pip install --upgrade pip && pip install -r requirements.txt
 

@@ -9,7 +9,7 @@ load_dotenv()
 
 DATABASE = Path(__file__).parent / 'database.db'
 ASSET_DIR = os.environ.get('ASSET_DIR')
-BUILD_DB = bool(int(os.environ.get('BUILD_DB')))
+BUILD_DB = bool(int(os.environ.get('BUILD_DB', '0')))
 
 
 def create_app(build_db=BUILD_DB):
